@@ -28,6 +28,7 @@ Tunneling options:
 - [website with ip addresses 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
 - [website with ip addresses 2](https://rockblack.pro/vpn/dopolnitelno/diapazon-ip-adresov)
 - [website with ip addresses 3](https://iplist.opencck.org)
+- [website with ip addresses 4](https://antifilter.download/)
 - [discord ip addresses](https://github.com/GhostRooter0953/discord-voice-ips)
 
 ---

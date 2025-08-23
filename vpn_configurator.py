@@ -605,7 +605,7 @@ def main() -> None:
     print(
         C(
             "Greetings, this program was created by the author: 'https://github.com/Friskes'\n"
-            "to simplify the creation of configurations for vpn clients.\n"
+            "to simplify the creation of configurations for vpn clients.\n",
             "light_magenta",
         )
     )
