@@ -22,7 +22,7 @@ Tunneling options:
 
 ---
 
-> You can use my personal collections of files with the ip addresses that I have attached to the repository (`youtube`, `chatgpt`, `jetbrains` services) in folder `ips` or you can collect the ip addresses you need yourself using the links below.
+> You can use my personal collections of files with the ip addresses that I have attached to the repository (`youtube`, `chatgpt`, `jetbrains` and other services) in [ips](https://github.com/Friskes/vpn-configurator/tree/main/ips) folder or you can collect the ip addresses you need yourself using the links below.
 - [various collections of ip addresses](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
 - [amnezia format ip addresses](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
 - [website with ip addresses 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
