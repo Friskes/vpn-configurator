@@ -34,16 +34,6 @@ def upd_or_create_wireguard_conf(
     match route_rule:
         case "1":
             pass
-            # Amnezia Obfuscate Settings
-            # config["Interface"]["Jc"] = "12"
-            # config["Interface"]["Jmin"] = "49"
-            # config["Interface"]["Jmax"] = "850"
-            # config["Interface"]["S1"] = "57"
-            # config["Interface"]["S2"] = "146"
-            # config["Interface"]["H1"] = "1013348378"
-            # config["Interface"]["H2"] = "251178477"
-            # config["Interface"]["H3"] = "1212663547"
-            # config["Interface"]["H4"] = "1619497452"
         case "2":
             # WireSock Obfuscate Settings
             config["Interface"]["ObfuscateKey"] = "12345678901234567890123456789012"
@@ -160,7 +150,7 @@ class IPValidator:
 
         try:
             if "/" in value:
-                ipaddress.IPv4Network(value, strict=False)
+                ipaddress.IPv4Network(value, strict=True)
             else:
                 ipaddress.IPv4Address(value)
         except ValueError as exc:
@@ -171,7 +161,15 @@ class IPValidator:
                     f"Exceeded {self.max_invalid} invalid IP addresses in a row."
                 ) from exc
 
-            print(C(f"Invalid address found, it will be skipped {value}", "red"))
+            error_message = str(exc)
+            if "has host bits set" in error_message:
+                error_message = (
+                    "CIDR network is invalid because it is not a network boundary for its prefix length"
+                )
+
+            print(
+                C(f"Invalid address found, it will be skipped: {value}. Reason: {error_message}", "red")
+            )
             return False
         else:
             self.invalid_count = 0
