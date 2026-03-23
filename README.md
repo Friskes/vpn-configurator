@@ -1,72 +1,181 @@
-## vpn-configurator
+# VPN Configurator
 
-### A CLI for creating a configuration file for Amnezia, WireSock, WireGuard, and other clients with separate address tunneling. As well as a CLI for converting files with IP addresses to various formats.
+> [🇬🇧 English version — README_EN.md](README_EN.md)
 
----
+> [!IMPORTANT]
+> Данный материал подготовлен в научно-технических целях. Использование предоставленных материалов в целях отличных от ознакомления может являться нарушением действующего законодательства.
+> Автор не несет ответственности за неправомерное использование данного материала!
 
-#### CLI Features
+**VPN Configurator** — интерактивная консольная программа для создания конфигурационных файлов VPN-клиентов с **раздельным туннелированием** трафика, а также для конвертации и объединения файлов с IP-адресами.
 
-- 1. Converting a file with ip addresses from the `amnezia` format to the `plaintext` format and vice versa.
-
-- 2. Combine files in the same format with ip addresses into a single file.
-
-- 3. Creating a `Amnezia`, `WireSock`, `WireGuard` and other configuration file for separate tunneling for `WireGuard` protocol.
-Tunneling options:
-  - 3.1. Proxying the specified ip addresses.
-  - 3.2. Proxying all ip addresses.
-
-- 4. Creating a `nekobox` android configuration file for separate tunneling for `vless` protocol.
-Tunneling options:
-  - 4.1. Proxy only ip addresses from the file with ip addresses, all other traffic is bypassed.
-  - 4.2. Proxy all traffic, only ip addresses from the file with ip addresses are bypassed.
+**Раздельное туннелирование** — это режим работы VPN, при котором через VPN проходит только трафик к указанным сайтам или сервисам, а весь остальной интернет работает как обычно, без потери скорости.
 
 ---
 
-> You can use my personal collections of files with the ip addresses that I have attached to the repository (`youtube`, `chatgpt`, `jetbrains` and other services) in [ips](https://github.com/Friskes/vpn-configurator/tree/main/ips) folder or you can collect the ip addresses you need yourself using the links below.
-- [various collections of ip addresses](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
-- [amnezia format ip addresses](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
-- [website with ip addresses 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
-- [website with ip addresses 2](https://rockblack.pro/vpn/dopolnitelno/diapazon-ip-adresov)
-- [website with ip addresses 3](https://iplist.opencck.org)
-- [website with ip addresses 4](https://antifilter.download/)
-- [discord ip addresses](https://github.com/GhostRooter0953/discord-voice-ips)
+### Готовые наборы IP-адресов в папке `ips/`
+
+В репозитории уже есть файлы с IP-адресами для следующих сервисов:
+
+| Файл | Сервис |
+|---|---|
+| `youtube.txt` | YouTube |
+| `chatgpt.txt` | ChatGPT / OpenAI |
+| `discord.txt` | Discord |
+| `ghcopilot.txt` | GitHub Copilot |
+| `instagram.txt` | Instagram |
+| `jetbrains.txt` | JetBrains |
+| `telegram.txt` | Telegram |
+| `whatsapp.txt` | WhatsApp |
+| `all.txt` | Все сервисы из списка выше объединены в один файл |
+
+Вы можете использовать эти файлы как есть или найти дополнительные наборы по ссылкам в разделе [Где взять IP-адреса](#где-взять-ip-адреса).
 
 ---
 
-#### Launch
-- To run the program on Windows or MacOS, you can use the latest file for you cpu architecture from [releases](https://github.com/Friskes/vpn-configurator/releases/latest)
-> Use the *terminal* program to launch the file on MacOS **not** *console* program.
+## Возможности программы
 
-> **Before running on macOS, you may need to give permissions to run the file**:
-```bash
-chmod +x vpn_configurator_vX.X.X
-```
+После запуска программа покажет интерактивное меню с пятью режимами работы:
 
-- If you have a python interpreter on your system, you can use the source code file to run program: `vpn_configurator.py`
-> Before running the python script, you need to run several commands:
-```bash
-python3 -m venv venv
-. venv/bin/activate
-pip3 install -r requirements.txt
-python vpn_configurator.py
-```
----
+**1. Создание конфига для Amnezia / WireSock / WireGuard**
+На основе существующего `.conf`-файла VPN создаёт новый файл конфигурации с прописанными IP-адресами для раздельного туннелирования по протоколу WireGuard.
+- Вариант А: через VPN идут **только указанные** IP-адреса
+- Вариант Б: через VPN идёт **весь трафик** (в файл добавляется только обфускация)
+- Поддерживаемые клиенты: **Amnezia**, **WireSock**, **WireGuard** и другие совместимые WG клиенты.
 
-#### Import in the amnezia desktop/android app
-To import the generated configuration file:
-- 1. Click on the `+` icon in main page
-- 2. Select option `The connection settings file`
-- 3. Select your configuration file
-- 4. If the application suggests enabling obfuscation, I recommend enabling it
-- 5. Click `Connect` button
-- The profile is ready to use!
+**2. Создание конфига для Nekobox (Android)**
+Создаёт конфигурационный файл `.json` для приложения Nekobox на Android по протоколу VLESS.
+- Вариант А: через VPN идут **только указанные** IP-адреса, остальной трафик — напрямую
+- Вариант Б: через VPN идёт **весь трафик**, кроме указанных IP-адресов
+
+**3. Конвертация: Amnezia → plaintext**
+Преобразует файл с IP-адресами из формата Amnezia (`.json`) в обычный текстовый формат (`.txt`), где каждый IP — на отдельной строке.
+
+**4. Конвертация: plaintext → Amnezia**
+Обратная конвертация — из текстового формата в формат Amnezia (`.json`).
+
+**5. Объединение файлов с IP-адресами**
+Объединяет несколько файлов с IP-адресами (в формате plaintext или Amnezia) в один единый файл, автоматически убирая дубликаты.
 
 ---
 
-#### Import in the nekobox android app
-To import the generated configuration file:
-- 1. Go to the `Configuration page` in the nekobox app
-- 2. Click on the `file+` icon
-- 3. Click `Import from file`
-- 4. Select the generated file on your device.
-- The profile is ready to use!
+## Как запустить программу
+
+### Вариант 1 — .exe файл (Windows)
+
+1. Скачайте файл `.exe` со страницы релизов: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
+2. Запустите скачанный файл **двойным кликом** — откроется консольное окно с меню программы
+3. Выберите нужный пункт меню, введя его номер
+
+---
+
+### Вариант 2 — файл для macOS
+
+> В отличие от Windows, на macOS двойной клик по бинарному файлу не открывает его в терминале — нужно запускать вручную через приложение **Терминал** (не «Консоль»).
+
+1. Скачайте файл для вашей архитектуры со страницы релизов: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
+
+   | Процессор | Файл для скачивания |
+   |---|---|
+   | Apple M1/M2/M3/M4 | `vpn_configurator_vX.X.X.macos-arm64` |
+   | Intel | `vpn_configurator_vX.X.X.macos-x86_64` |
+
+   > Не знаете какой процессор? Нажмите  → «Об этом Mac» — в строке «Чип» или «Процессор» будет указано.
+2. Откройте приложение **Терминал** (не «Консоль»)
+3. Перейдите в папку со скачанным файлом:
+   ```bash
+   cd ~/Downloads
+   ```
+4. Дайте файлу разрешение на запуск (подставьте имя скачанного файла):
+   ```bash
+   chmod +x vpn_configurator_vX.X.X.macos-arm64
+   ```
+5. Запустите программу:
+   ```bash
+   ./vpn_configurator_vX.X.X.macos-arm64
+   ```
+
+---
+
+### Вариант 3 — Python-скрипт
+
+Если у вас установлен Python 3.10 или выше, можно запустить исходный скрипт напрямую.
+
+1. Клонируйте или скачайте этот репозиторий
+2. Откройте терминал в папке с проектом и выполните команды по очереди:
+
+   **Windows:**
+   ```
+   python -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   python vpn_configurator.py
+   ```
+
+   **macOS / Linux:**
+   ```bash
+   python3 -m venv venv
+   . venv/bin/activate
+   pip3 install -r requirements.txt
+   python3 vpn_configurator.py
+   ```
+
+---
+
+## Как устроена программа
+
+Программа полностью интерактивна — никаких аргументов командной строки знать не нужно. После запуска она выводит главное меню с пронумерованными пунктами. Вы вводите номер нужного действия, и программа ведёт вас дальше: шаг за шагом задаёт вопросы, подсказывает, что именно ввести, и сообщает об ошибках понятным текстом. В конце каждого сценария программа сообщает об успешном создании файла и завершает работу.
+
+---
+
+## Импорт конфигурации в приложение
+
+### Amnezia (Windows / Android)
+
+1. Нажмите на иконку `+` на главном экране приложения
+2. Выберите пункт **«Файл с настройками подключения»**
+3. Укажите путь к сгенерированному `.conf` файлу
+4. Если приложение предложит включить обфускацию — обязательно согласитесь
+5. Нажмите **«Подключиться»**
+
+Готово — профиль создан и готов к использованию!
+
+---
+
+### WireGuard / WireSock (Windows)
+
+Откройте приложение WireGuard (или WireSock) и импортируйте сгенерированный `.conf` файл через меню **«Добавить туннель из файла»**.
+
+---
+
+### Nekobox (Android)
+
+1. Перейдите на страницу **«Конфигурации»** в приложении Nekobox
+2. Нажмите на иконку `файл+`
+3. Выберите **«Импорт из файла»**
+4. Укажите путь к сгенерированному `.json` файлу
+
+Готово — профиль создан и готов к использованию!
+
+---
+
+## Где взять IP-адреса
+
+Готовые наборы уже есть в папке [`ips/`](https://github.com/Friskes/vpn-configurator/tree/main/ips). Если нужны дополнительные сервисы, воспользуйтесь этими ресурсами:
+
+- [Разные коллекции IP-адресов (gist)](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
+- [IP-адреса в формате Amnezia (gist)](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
+- [Сайт с диапазонами IP-адресов 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
+- [Сайт с диапазонами IP-адресов 2](https://rockblack.pro/vpn/dopolnitelno/diapazon-ip-adresov)
+- [iplist.opencck.org](https://iplist.opencck.org)
+- [antifilter.download](https://antifilter.download/)
+- [IP-адреса Discord](https://github.com/GhostRooter0953/discord-voice-ips)
+
+---
+
+## Полезные ссылки
+
+- [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN-клиент с поддержкой обфускации для Windows, macOS, Android, iOS
+- [WireSock VPN Client](https://www.wiresock.net/) — WireGuard-клиент для Windows с поддержкой раздельного туннелирования
+- [WireGuard](https://github.com/WireGuard/wireguard-windows) — официальный клиент WireGuard для Windows
+- [Nekobox для Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — прокси-клиент для Android с поддержкой VLESS
+- [Nekobox для Windows / Linux / macOS](https://github.com/MatsuriDayo/nekoray) — десктопная версия прокси-клиента с поддержкой VLESS
