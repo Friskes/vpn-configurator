@@ -10,6 +10,8 @@
 
 **Split tunneling** is a VPN mode where only traffic to specified websites or services goes through the VPN, while everything else continues to work at full speed without any slowdown.
 
+![How Split Tunneling Works](images/How-Split-Tunneling-Works.jpg)
+
 ---
 
 ### Ready-to-use IP address sets in the `ips/` folder
