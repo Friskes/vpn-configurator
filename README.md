@@ -28,6 +28,7 @@
 | `jetbrains.txt` | JetBrains |
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
+| `pypi.txt` | PyPI / pip / uv / uvx (Python пакеты) |
 | `all.txt` | Все сервисы из списка выше объединены в один файл |
 
 Вы можете использовать эти файлы как есть или найти дополнительные наборы по ссылкам в разделе [Где взять IP-адреса](#где-взять-ip-адреса).

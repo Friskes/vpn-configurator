@@ -28,6 +28,7 @@ The repository already includes IP address files for the following services:
 | `jetbrains.txt` | JetBrains |
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
+| `pypi.txt` | PyPI / pip / uv / uvx (Python packages) |
 | `all.txt` | All services above merged into a single file |
 
 You can use these files as-is or find additional sets using the links in the [Where to get IP addresses](#where-to-get-ip-addresses) section.
