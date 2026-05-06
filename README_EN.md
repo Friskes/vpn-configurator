@@ -29,6 +29,9 @@ The repository already includes IP address files for the following services:
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
 | `pypi.txt` | PyPI / pip / uv / uvx (Python packages) |
+| `twitch.txt` | Twitch |
+| `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
+| `anthropic.txt` | Anthropic / Claude Code |
 | `all.txt` | All services above merged into a single file |
 
 You can use these files as-is or find additional sets using the links in the [Where to get IP addresses](#where-to-get-ip-addresses) section.
@@ -172,6 +175,7 @@ Ready-to-use sets are already available in the [`ips/`](https://github.com/Frisk
 - [iplist.opencck.org](https://iplist.opencck.org)
 - [antifilter.download](https://antifilter.download/)
 - [Discord IP addresses](https://github.com/GhostRooter0953/discord-voice-ips)
+- [Global IP addresses (RockBlack-VPN)](https://github.com/RockBlack-VPN/ip-address/blob/main/Global)
 
 ---
 

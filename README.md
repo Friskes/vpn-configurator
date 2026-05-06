@@ -29,6 +29,9 @@
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
 | `pypi.txt` | PyPI / pip / uv / uvx (Python пакеты) |
+| `twitch.txt` | Twitch |
+| `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
+| `anthropic.txt` | Anthropic / Claude Code |
 | `all.txt` | Все сервисы из списка выше объединены в один файл |
 
 Вы можете использовать эти файлы как есть или найти дополнительные наборы по ссылкам в разделе [Где взять IP-адреса](#где-взять-ip-адреса).
@@ -172,6 +175,7 @@
 - [iplist.opencck.org](https://iplist.opencck.org)
 - [antifilter.download](https://antifilter.download/)
 - [IP-адреса Discord](https://github.com/GhostRooter0953/discord-voice-ips)
+- [Глобальные IP-адреса (RockBlack-VPN)](https://github.com/RockBlack-VPN/ip-address/blob/main/Global)
 
 ---
 
