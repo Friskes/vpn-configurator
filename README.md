@@ -29,7 +29,7 @@
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
 | `pypi.txt` | PyPI / pip / uv / uvx (Python пакеты) |
-| `twitch.txt` | Twitch |
+| `twitch.txt` | Twitch (1080p + Unblock GeoIP) |
 | `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
 | `anthropic.txt` | Anthropic / Claude Code |
 | `all.txt` | Все сервисы из списка выше объединены в один файл |
@@ -173,6 +173,7 @@
 - [Сайт с диапазонами IP-адресов 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
 - [Сайт с диапазонами IP-адресов 2](https://rockblack.pro/vpn/dopolnitelno/diapazon-ip-adresov)
 - [iplist.opencck.org](https://iplist.opencck.org)
+- [iplist.opencck.org (beta)](https://beta.iplist.opencck.org/)
 - [antifilter.download](https://antifilter.download/)
 - [IP-адреса Discord](https://github.com/GhostRooter0953/discord-voice-ips)
 - [Глобальные IP-адреса (RockBlack-VPN)](https://github.com/RockBlack-VPN/ip-address/blob/main/Global)

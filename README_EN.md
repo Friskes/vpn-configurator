@@ -29,7 +29,7 @@ The repository already includes IP address files for the following services:
 | `telegram.txt` | Telegram |
 | `whatsapp.txt` | WhatsApp |
 | `pypi.txt` | PyPI / pip / uv / uvx (Python packages) |
-| `twitch.txt` | Twitch |
+| `twitch.txt` | Twitch (1080p + Unblock GeoIP) |
 | `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
 | `anthropic.txt` | Anthropic / Claude Code |
 | `all.txt` | All services above merged into a single file |
@@ -173,6 +173,7 @@ Ready-to-use sets are already available in the [`ips/`](https://github.com/Frisk
 - [IP address ranges website 1](https://rockblack.su/vpn/dopolnitelno/diapazon-ip-adresov)
 - [IP address ranges website 2](https://rockblack.pro/vpn/dopolnitelno/diapazon-ip-adresov)
 - [iplist.opencck.org](https://iplist.opencck.org)
+- [iplist.opencck.org (beta)](https://beta.iplist.opencck.org/)
 - [antifilter.download](https://antifilter.download/)
 - [Discord IP addresses](https://github.com/GhostRooter0953/discord-voice-ips)
 - [Global IP addresses (RockBlack-VPN)](https://github.com/RockBlack-VPN/ip-address/blob/main/Global)
