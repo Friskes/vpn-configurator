@@ -38,6 +38,12 @@ def upd_or_create_wireguard_conf(
             # WireSock Obfuscate Settings
             config["Interface"]["ObfuscateKey"] = "12345678901234567890123456789012"
             config["Interface"]["ObfuscateMethod"] = "xor"
+            disallowed_apps = [
+                app.strip() for app in config["Peer"].get("DisallowedApps", "").split(",") if app.strip()
+            ]
+            if "rustdesk" not in (app.lower() for app in disallowed_apps):
+                disallowed_apps.append("rustdesk")
+            config["Peer"]["DisallowedApps"] = ", ".join(disallowed_apps)
 
     with open(output_path or conf_path, "w", encoding="utf-8") as f:
         config.write(f)
