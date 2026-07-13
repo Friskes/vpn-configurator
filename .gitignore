@@ -1,6 +1,9 @@
 trash
 venv
+.venv
 dist
 build
 *.spec
 __pycache__/
+.pytest_cache/
+.coverage
