@@ -258,30 +258,23 @@ class TestBuildWireguardConf:
         text = build(["8.8.8.8", "1.1.1.0/24"], wg_conf)
         assert "AllowedIPs = 8.8.8.8, 1.1.1.0/24" in text
         assert "ObfuscateKey" not in text
-        assert "rustdesk" not in text
 
     def test_with_obfuscation(self, wg_conf):
-        """Обфускация добавляет только свои ключи; rustdesk управляется auto_disallowed_apps."""
         text = build(["8.8.8.8"], wg_conf, obfuscate=True)
         assert "ObfuscateKey" in text
         assert "ObfuscateMethod = xor" in text
-        assert "rustdesk" not in text
 
-    def test_auto_disallowed_apps(self, wg_conf):
-        text = build(["8.8.8.8"], wg_conf, auto_disallowed_apps=("rustdesk",))
-        assert "DisallowedApps = rustdesk" in text
-
-    def test_auto_disallowed_not_duplicated(self, tmp_path):
-        """rustdesk уже в DisallowedApps (в любом регистре) — второй раз не добавляется."""
+    def test_disallowed_apps_merged_with_existing(self, tmp_path):
+        """Имя уже есть в DisallowedApps (в другом регистре) — второй раз не добавляется."""
         conf = tmp_path / "src.conf"
         conf.write_text(
             "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
-            "DisallowedApps = firefox, RustDesk\n",
+            "DisallowedApps = firefox, Chrome\n",
             encoding="utf-8",
         )
-        text = build(["8.8.8.8"], conf, auto_disallowed_apps=("rustdesk",))
-        assert "DisallowedApps = firefox, RustDesk" in text
-        assert text.lower().count("rustdesk") == 1
+        text = build(["8.8.8.8"], conf, disallowed_apps=["chrome", "discord"])
+        assert "DisallowedApps = firefox, Chrome, discord" in text
+        assert text.lower().count("chrome") == 1
 
     def test_bypass_lan_added(self, wg_conf):
         text = build(["8.8.8.8"], wg_conf, bypass_lan=True)
@@ -325,8 +318,8 @@ class TestBuildWireguardConf:
             "DisallowedApps = %ProgramFiles%\\app.exe\n",
             encoding="utf-8",
         )
-        text = build(["8.8.8.8"], conf, auto_disallowed_apps=("rustdesk",))
-        assert "%ProgramFiles%\\app.exe, rustdesk" in text
+        text = build(["8.8.8.8"], conf, disallowed_apps=["chrome"])
+        assert "%ProgramFiles%\\app.exe, chrome" in text
 
     def test_lowercase_keys_replaced_not_duplicated(self, tmp_path):
         """WireGuard парсит ключи регистронезависимо: 'allowedips' должен замениться,
@@ -337,16 +330,11 @@ class TestBuildWireguardConf:
             "allowedips = 0.0.0.0/0\ndisallowedapps = chrome\n",
             encoding="utf-8",
         )
-        text = build(
-            ["8.8.8.8"],
-            conf,
-            disallowed_apps=["telegram"],
-            auto_disallowed_apps=("rustdesk",),
-        )
+        text = build(["8.8.8.8"], conf, disallowed_apps=["telegram"])
         assert "0.0.0.0/0" not in text
         assert "AllowedIPs = 8.8.8.8" in text
         assert text.lower().count("allowedips") == 1
-        assert "DisallowedApps = chrome, telegram, rustdesk" in text
+        assert "DisallowedApps = chrome, telegram" in text
         assert text.lower().count("disallowedapps") == 1
 
     def test_lowercase_sections_accepted(self, tmp_path):
@@ -398,16 +386,15 @@ class TestWireSockRules:
             obfuscate=True,
             disallowed_ips=["192.168.0.0/16", "10.0.0.0/8"],
             disallowed_apps=["chrome", "telegram"],
-            auto_disallowed_apps=("rustdesk",),
         )
         assert "DisallowedIPs = 192.168.0.0/16, 10.0.0.0/8" in text
-        assert "DisallowedApps = chrome, telegram, rustdesk" in text
+        assert "DisallowedApps = chrome, telegram" in text
 
     def test_disallowed_merged_with_existing(self, tmp_path):
         conf = tmp_path / "src.conf"
         conf.write_text(
             "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
-            "DisallowedIPs = 172.16.0.0/12\nDisallowedApps = Chrome, RustDesk\n",
+            "DisallowedIPs = 172.16.0.0/12\nDisallowedApps = Chrome, Firefox\n",
             encoding="utf-8",
         )
         text = build(
@@ -418,19 +405,17 @@ class TestWireSockRules:
             disallowed_apps=["chrome", "discord"],
         )
         assert "DisallowedIPs = 172.16.0.0/12, 192.168.0.0/16" in text
-        assert "DisallowedApps = Chrome, RustDesk, discord" in text
+        assert "DisallowedApps = Chrome, Firefox, discord" in text
 
     def test_allowed_apps(self, wg_conf):
-        """Белый список: rustdesk в DisallowedApps не дописывается — режимы взаимоисключающие."""
         text = build(["8.8.8.8"], wg_conf, obfuscate=True, allowed_apps=["qbittorrent", "firefox"])
         assert "AllowedApps = qbittorrent, firefox" in text
         assert "DisallowedApps" not in text
-        assert "rustdesk" not in text
 
     def test_whitelist_removes_existing_disallowed_apps(self, tmp_path):
         conf = tmp_path / "src.conf"
         conf.write_text(
-            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nDisallowedApps = rustdesk\n",
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nDisallowedApps = chrome\n",
             encoding="utf-8",
         )
         text = build(["8.8.8.8"], conf, obfuscate=True, allowed_apps=["qbittorrent"])
@@ -447,15 +432,13 @@ class TestWireSockRules:
         assert "DisallowedApps = chrome" in text
         assert "AllowedApps" not in text
 
-    def test_rustdesk_skipped_when_source_has_allowed_apps(self, tmp_path):
+    def test_existing_app_lists_untouched_without_arguments(self, tmp_path):
         conf = tmp_path / "src.conf"
         conf.write_text(
             "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nAllowedApps = firefox\n",
             encoding="utf-8",
         )
-        text = build(["8.8.8.8"], conf, obfuscate=True)
-        assert "AllowedApps = firefox" in text
-        assert "rustdesk" not in text
+        assert "AllowedApps = firefox" in build(["8.8.8.8"], conf, obfuscate=True)
 
     def test_both_app_lists_rejected(self, wg_conf):
         with pytest.raises(ValueError):
@@ -466,6 +449,110 @@ class TestWireSockRules:
                 disallowed_apps=["chrome"],
                 allowed_apps=["firefox"],
             )
+
+
+@pytest.fixture
+def endpoint_conf(tmp_path):
+    def make(endpoint):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            f"[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nEndpoint = {endpoint}\n",
+            encoding="utf-8",
+        )
+        return conf
+
+    return make
+
+
+class TestBypassEndpoint:
+    def test_endpoint_added_to_disallowed_ips(self, endpoint_conf):
+        conf = endpoint_conf("185.22.174.53:51820")
+        text = build(["0.0.0.0/0"], conf, obfuscate=True, bypass_endpoint=True)
+        assert "DisallowedIPs = 185.22.174.53" in text
+
+    def test_absent_without_flag(self, endpoint_conf):
+        conf = endpoint_conf("185.22.174.53:51820")
+        assert "DisallowedIPs" not in build(["0.0.0.0/0"], conf, obfuscate=True)
+
+    def test_endpoint_goes_first_and_keeps_other_ranges(self, endpoint_conf):
+        conf = endpoint_conf("185.22.174.53:51820")
+        text = build(
+            ["0.0.0.0/0"],
+            conf,
+            obfuscate=True,
+            disallowed_ips=["192.168.0.0/16"],
+            bypass_endpoint=True,
+        )
+        assert "DisallowedIPs = 192.168.0.0/16, 185.22.174.53" in text
+
+    def test_not_duplicated_when_already_listed(self, tmp_path):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "Endpoint = 185.22.174.53:51820\nDisallowedIPs = 185.22.174.53\n",
+            encoding="utf-8",
+        )
+        text = build(["0.0.0.0/0"], conf, obfuscate=True, bypass_endpoint=True)
+        assert text.count("185.22.174.53") == 2  # Endpoint + один раз в DisallowedIPs
+
+    @pytest.mark.parametrize("endpoint", ["vpn.example.com:51820", "[2001:db8::1]:51820"])
+    def test_non_ipv4_endpoint_ignored(self, endpoint_conf, endpoint):
+        """Домен не резолвим, IPv6 приложение не обрабатывает нигде — ключ просто не появляется."""
+        conf = endpoint_conf(endpoint)
+        assert "DisallowedIPs" not in build(["0.0.0.0/0"], conf, obfuscate=True, bypass_endpoint=True)
+
+    def test_missing_endpoint_key(self, wg_conf):
+        assert "DisallowedIPs" not in build(["0.0.0.0/0"], wg_conf, obfuscate=True, bypass_endpoint=True)
+
+    def test_read_endpoint_ip(self, endpoint_conf):
+        assert core.read_endpoint_ip(endpoint_conf("185.22.174.53:51820")) == "185.22.174.53"
+
+    def test_read_endpoint_ip_without_port(self, endpoint_conf):
+        assert core.read_endpoint_ip(endpoint_conf("185.22.174.53")) == "185.22.174.53"
+
+    def test_read_endpoint_ip_missing_file(self, tmp_path):
+        assert core.read_endpoint_ip(tmp_path / "nope.conf") is None
+
+
+class TestExcludeIps:
+    def test_single_host_removed_from_default_route(self):
+        result = core.exclude_ips(["0.0.0.0/0"], ["185.22.174.53"])
+        assert "0.0.0.0/0" not in result
+        assert "185.22.174.53/32" not in result
+        assert "185.22.174.52/32" in result
+        assert "185.22.174.54/31" in result
+
+    def test_result_covers_everything_but_the_hole(self):
+        """Дополнение обязано быть точным: ни одного лишнего или потерянного адреса."""
+        import ipaddress
+
+        result = core.exclude_ips(["0.0.0.0/0"], ["185.22.174.53"])
+        total = sum(ipaddress.IPv4Network(net).num_addresses for net in result)
+        assert total == 2**32 - 1
+        hole = ipaddress.IPv4Address("185.22.174.53")
+        assert not any(hole in ipaddress.IPv4Network(net) for net in result)
+
+    def test_ipv6_and_unknown_values_pass_through(self):
+        result = core.exclude_ips(["0.0.0.0/0", "::/0"], ["185.22.174.53"])
+        assert result[-1] == "::/0"
+
+    def test_network_fully_inside_hole_disappears(self):
+        assert core.exclude_ips(["10.0.0.0/24"], ["10.0.0.0/8"]) == []
+
+    def test_equal_network_and_hole_leaves_nothing(self):
+        assert core.exclude_ips(["10.0.0.0/8"], ["10.0.0.0/8"]) == []
+
+    def test_untouched_when_no_overlap(self):
+        assert core.exclude_ips(["8.8.8.8/32"], ["10.0.0.0/8"]) == ["8.8.8.8/32"]
+
+    def test_invalid_exclusion_ignored(self):
+        assert core.exclude_ips(["10.0.0.0/8"], ["не адрес"]) == ["10.0.0.0/8"]
+
+    def test_several_holes(self):
+        result = core.exclude_ips(["10.0.0.0/8"], ["10.1.0.0/16", "10.2.0.0/16"])
+        assert "10.1.0.0/16" not in result
+        assert "10.2.0.0/16" not in result
+        assert "10.0.0.0/16" in result
 
 
 @pytest.fixture
@@ -494,42 +581,27 @@ class TestAndroidRules:
         assert "ExcludedApplications = com.android.chrome" in interface
         assert "ExcludedApplications" not in peer
 
-    def test_auto_excluded_adds_rustdesk_package(self, wg_conf):
-        text = build(["8.8.8.8"], wg_conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
-        assert "ExcludedApplications = com.carriez.flutter_hbb" in text
-
-    def test_auto_excluded_merged_with_existing(self, android_conf):
+    def test_excluded_merged_with_existing(self, android_conf):
         conf = android_conf(interface_extra="ExcludedApplications = com.android.chrome\n")
-        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
-        assert "ExcludedApplications = com.android.chrome, com.carriez.flutter_hbb" in text
+        text = build(["8.8.8.8"], conf, excluded_apps=["org.telegram.messenger"])
+        assert "ExcludedApplications = com.android.chrome, org.telegram.messenger" in text
 
-    def test_auto_excluded_not_duplicated(self, android_conf):
-        conf = android_conf(interface_extra="excludedapplications = com.carriez.flutter_hbb\n")
-        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
-        assert text.count("com.carriez.flutter_hbb") == 1
+    def test_excluded_not_duplicated(self, android_conf):
+        conf = android_conf(interface_extra="excludedapplications = com.android.chrome\n")
+        text = build(["8.8.8.8"], conf, excluded_apps=["com.android.chrome"])
+        assert text.count("com.android.chrome") == 1
 
-    def test_whitelist_removes_excluded_and_skips_rustdesk(self, android_conf):
+    def test_whitelist_removes_existing_excluded(self, android_conf):
         conf = android_conf(interface_extra="ExcludedApplications = com.android.chrome\n")
-        text = build(
-            ["8.8.8.8"],
-            conf,
-            included_apps=["org.telegram.messenger"],
-            auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS,
-        )
+        text = build(["8.8.8.8"], conf, included_apps=["org.telegram.messenger"])
         assert "IncludedApplications = org.telegram.messenger" in text
         assert "ExcludedApplications" not in text
-        assert "com.carriez.flutter_hbb" not in text
 
     def test_blacklist_removes_existing_included(self, android_conf):
         conf = android_conf(interface_extra="IncludedApplications = com.android.chrome\n")
         text = build(["8.8.8.8"], conf, excluded_apps=["org.telegram.messenger"])
         assert "ExcludedApplications = org.telegram.messenger" in text
         assert "IncludedApplications" not in text
-
-    def test_rustdesk_skipped_when_source_has_included(self, android_conf):
-        conf = android_conf(interface_extra="IncludedApplications = com.android.chrome\n")
-        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
-        assert "ExcludedApplications" not in text
 
     def test_both_package_lists_rejected(self, wg_conf):
         with pytest.raises(ValueError):

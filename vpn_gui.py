@@ -12,8 +12,6 @@ import customtkinter as ctk
 
 from vpn_configurator import (
     ALL_TRAFFIC_IPS,
-    DEFAULT_DISALLOWED_APPS,
-    DEFAULT_EXCLUDED_APPS,
     DEFAULT_KEEPALIVE,
     LAN_EXCLUDE_IPS,
     MAX_KEEPALIVE,
@@ -22,8 +20,10 @@ from vpn_configurator import (
     build_wireguard_conf,
     collect_app_names,
     collect_ips,
+    exclude_ips,
     merge_unique,
     parse_app_names,
+    read_endpoint_ip,
     read_persistent_keepalive,
     validate_amnezia_text,
     validate_wireguard_text,
@@ -718,17 +718,9 @@ class VpnConfiguratorApp(ctk.CTk):
             page, 7, "gui_android_settings", "gui_android_warning"
         )
 
-        self.wg_exclude_rustdesk = ctk.BooleanVar(value=False)
-        exclude_rustdesk_box = ctk.CTkCheckBox(
-            self.android_frame, variable=self.wg_exclude_rustdesk, command=self.schedule_preview
-        )
-        exclude_rustdesk_box.grid(row=2, column=0, sticky="w", padx=12, pady=(4, 0))
-        self.register_i18n(exclude_rustdesk_box, "gui_exclude_rustdesk")
-        Tooltip(exclude_rustdesk_box, "gui_exclude_rustdesk_tooltip")
-
         self.wg_package_mode = ctk.StringVar(value=APP_MODE_EXCLUDED)
         package_mode_frame = ctk.CTkFrame(self.android_frame, fg_color="transparent")
-        package_mode_frame.grid(row=3, column=0, sticky="w", padx=12, pady=(6, 0))
+        package_mode_frame.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 0))
         for row, (value, key) in enumerate(
             [(APP_MODE_EXCLUDED, "gui_apps_mode_excluded"), (APP_MODE_INCLUDED, "gui_apps_mode_included")]
         ):
@@ -744,7 +736,7 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_packages = TextListBox(
             self.android_frame, self, "gui_packages_label", "gui_hint_packages"
         )
-        self.wg_packages.grid(row=4, column=0, sticky="ew", padx=12, pady=(6, 10))
+        self.wg_packages.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 10))
 
         keepalive_frame = ctk.CTkFrame(page, fg_color="transparent")
         keepalive_frame.grid(row=8, column=0, sticky="w", pady=(6, 0))
@@ -846,10 +838,8 @@ class VpnConfiguratorApp(ctk.CTk):
                 disallowed_ips=disallowed_ips,
                 disallowed_apps=[] if allowed_mode else apps,
                 allowed_apps=apps if allowed_mode else [],
-                auto_disallowed_apps=(
-                    DEFAULT_DISALLOWED_APPS if self.wg_exclude_lan.get() and not allowed_mode else ()
-                ),
                 bypass_lan=self.wg_bypass_lan.get(),
+                bypass_endpoint=self.wg_route.get() == "all",
             )
         elif client == CLIENT_ANDROID:
             packages = parse_app_names(self.wg_packages.get())
@@ -857,13 +847,17 @@ class VpnConfiguratorApp(ctk.CTk):
             kwargs.update(
                 excluded_apps=[] if included_mode else packages,
                 included_apps=packages if included_mode else [],
-                auto_excluded_apps=(
-                    DEFAULT_EXCLUDED_APPS
-                    if self.wg_exclude_rustdesk.get() and not included_mode
-                    else ()
-                ),
             )
         return kwargs
+
+    def _allowed_ips_for_client(self, ips: list[str], source: str) -> list[str]:
+        """У WireGuard под Android нет ключа исключений, поэтому в режиме «весь трафик»
+        адрес сервера вычитается прямо из AllowedIPs — иначе трафик к сервисам на том же
+        сервере уходил бы в туннель и возвращался на него же."""
+        if self.wg_client.get() != CLIENT_ANDROID or self.wg_route.get() != "all":
+            return ips
+        endpoint = read_endpoint_ip(source)
+        return exclude_ips(ips, [endpoint]) if endpoint else ips
 
     def _keepalive_value(self) -> int | None:
         """Число из поля PersistentKeepalive; пустое или неподходящее значение означает
@@ -922,7 +916,7 @@ class VpnConfiguratorApp(ctk.CTk):
             self._require(self.wg_files.paths, "gui_err_need_files")
             ips = self._collect_ips_cached(self.wg_files.paths)
         text = build_wireguard_conf(
-            ips,
+            self._allowed_ips_for_client(ips, src),
             src,
             self.wg_client.get() == CLIENT_WIRESOCK,
             **self._wg_client_kwargs(),

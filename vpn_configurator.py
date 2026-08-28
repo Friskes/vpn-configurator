@@ -18,8 +18,6 @@ ALL_TRAFFIC_IPS = ("0.0.0.0/0", "::/0")
 COMMENT_PREFIXES = ("#", ";", "//")
 MAX_INVALID_IN_A_ROW = 30
 OBFUSCATE_KEY = "12345678901234567890123456789012"
-DEFAULT_DISALLOWED_APPS = ("rustdesk",)
-DEFAULT_EXCLUDED_APPS = ("com.carriez.flutter_hbb",)
 DEFAULT_KEEPALIVE = 25
 MAX_KEEPALIVE = 65535
 LAN_EXCLUDE_IPS = (
@@ -259,6 +257,56 @@ def _remove_key(lines: list[str], section: str, key: str) -> None:
         del lines[index]
 
 
+def _endpoint_ip(lines: Sequence[str]) -> str | None:
+    """IPv4-адрес из [Peer] Endpoint, иначе None. Доменное имя не резолвим: адрес сервера
+    может смениться, и зашитый в конфиг результат разовой резолвации станет ложью."""
+    for value in _get_values(lines, "peer", "Endpoint"):
+        host = value.rpartition(":")[0] or value
+        with suppress(ValueError):
+            return str(ipaddress.IPv4Address(host))
+    return None
+
+
+def read_endpoint_ip(conf_path: Path | str) -> str | None:
+    """То же, что _endpoint_ip, но по пути к файлу — для клиентов без ключа исключений,
+    где адрес сервера приходится вычитать из AllowedIPs ещё до сборки конфига."""
+    try:
+        lines = _read_text(Path(conf_path)).splitlines()
+    except (VpnConfiguratorError, OSError):
+        return None
+    if "peer" not in _find_sections(lines):
+        return None
+    return _endpoint_ip(lines)
+
+
+def exclude_ips(source_ips: Sequence[str], excluded_ips: Sequence[str]) -> list[str]:
+    """Диапазоны source_ips за вычетом excluded_ips, схлопнутые в минимальный список CIDR.
+    Нужно там, где клиент не понимает отдельного ключа исключений и «всё, кроме X»
+    выразимо только самим списком AllowedIPs. Не-IPv4 значения проходят насквозь."""
+    passthrough: list[str] = []
+    networks: list[ipaddress.IPv4Network] = []
+    for value in source_ips:
+        try:
+            networks.append(ipaddress.IPv4Network(value, strict=False))
+        except ValueError:
+            passthrough.append(value)
+
+    for value in excluded_ips:
+        try:
+            hole = ipaddress.IPv4Network(value, strict=False)
+        except ValueError:
+            continue
+        remaining: list[ipaddress.IPv4Network] = []
+        for network in networks:
+            if not network.overlaps(hole):
+                remaining.append(network)
+            elif hole.subnet_of(network):
+                remaining.extend(network.address_exclude(hole))
+        networks = remaining
+
+    return [str(network) for network in ipaddress.collapse_addresses(networks)] + passthrough
+
+
 def read_persistent_keepalive(conf_path: Path | str) -> int | None:
     """Ненулевой PersistentKeepalive из [Peer] существующего конфига, иначе None.
     Нечитаемый файл, отсутствие ключа, нечисловое значение и 0 равнозначны «не задан»."""
@@ -284,18 +332,17 @@ def build_wireguard_conf(
     disallowed_ips: Sequence[str] = (),
     disallowed_apps: Sequence[str] = (),
     allowed_apps: Sequence[str] = (),
-    auto_disallowed_apps: Sequence[str] = (),
     bypass_lan: bool = False,
     excluded_apps: Sequence[str] = (),
     included_apps: Sequence[str] = (),
-    auto_excluded_apps: Sequence[str] = (),
     keepalive: int | None = None,
+    bypass_endpoint: bool = False,
 ) -> str:
     """Возвращает текст нового WireGuard-конфига. Правки построчные — комментарии, повторяющиеся
     ключи и регистр исходника сохраняются, ключи/секции ищутся без учёта регистра.
     allowed_apps и disallowed_apps взаимоисключающие: выбор одного удаляет другой ключ;
-    auto_disallowed_apps дописываются в чёрный список, только если белого нет нигде.
-    included_apps/excluded_apps — та же пара для Android-ключей в секции [Interface]."""
+    included_apps/excluded_apps — та же пара для Android-ключей в секции [Interface].
+    bypass_endpoint добавляет адрес самого VPN-сервера в DisallowedIPs."""
     if allowed_apps and disallowed_apps:
         raise ValueError("allowed_apps and disallowed_apps are mutually exclusive")
     if included_apps and excluded_apps:
@@ -315,6 +362,11 @@ def build_wireguard_conf(
             raise VpnConfiguratorError(tr("msg_no_section").format(section=section))
 
     _set_key(lines, "peer", "AllowedIPs", ", ".join(source_ips))
+
+    if bypass_endpoint:
+        endpoint = _endpoint_ip(lines)
+        if endpoint:
+            disallowed_ips = merge_unique(disallowed_ips, [endpoint])
 
     if disallowed_ips:
         merged = merge_unique(_get_values(lines, "peer", "DisallowedIPs"), disallowed_ips)
@@ -347,20 +399,6 @@ def build_wireguard_conf(
 
     if keepalive is not None:
         _set_key(lines, "peer", "PersistentKeepalive", str(keepalive))
-
-    if auto_disallowed_apps and not allowed_apps and not _get_values(lines, "peer", "AllowedApps"):
-        merged = merge_unique(_get_values(lines, "peer", "DisallowedApps"), auto_disallowed_apps)
-        _set_key(lines, "peer", "DisallowedApps", ", ".join(merged))
-
-    if (
-        auto_excluded_apps
-        and not included_apps
-        and not _get_values(lines, "interface", "IncludedApplications")
-    ):
-        merged = merge_unique(
-            _get_values(lines, "interface", "ExcludedApplications"), auto_excluded_apps
-        )
-        _set_key(lines, "interface", "ExcludedApplications", ", ".join(merged))
 
     return "\n".join(lines) + "\n"
 
