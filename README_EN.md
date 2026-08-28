@@ -53,6 +53,7 @@ In the GUI you can drag & drop files straight into the program window, remove th
 | `twitch.txt` | Twitch (1080p + Unblock GeoIP) |
 | `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
 | `anthropic.txt` | Anthropic / Claude Code |
+| `rutracker.txt` | RuTracker |
 | `all.txt` | All services above merged into a single file |
 
 More sets — in the [Where to get IP addresses](#where-to-get-ip-addresses) section.

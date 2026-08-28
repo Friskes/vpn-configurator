@@ -53,6 +53,7 @@
 | `twitch.txt` | Twitch (1080p + Unblock GeoIP) |
 | `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
 | `anthropic.txt` | Anthropic / Claude Code |
+| `rutracker.txt` | RuTracker |
 | `all.txt` | Все сервисы из списка выше объединены в один файл |
 
 Дополнительные наборы — в разделе [Где взять IP-адреса](#где-взять-ip-адреса).
