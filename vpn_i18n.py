@@ -47,6 +47,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "msg_line_not_kv": "Line {num} does not look like 'Key = value': {line}",
         "msg_missing_allowed_ips": "The [Peer] section has no AllowedIPs key.",
         "msg_invalid_ip_in_key": "Invalid address in {key}: {value}",
+        "msg_invalid_keepalive": "Invalid PersistentKeepalive value: {value}",
         "msg_bad_amnezia_json": "The text is not valid JSON.",
         "gui_invalid_config_title": "Pre-save check",
         "gui_invalid_config_question": (
@@ -73,6 +74,33 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_client_label": "VPN client:",
         "gui_client_wireguard": "Classic WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (obfuscation + extra filters)",
+        "gui_client_android": "WireGuard for Android (app filter)",
+        "gui_android_settings": "WireGuard for Android settings",
+        "gui_android_warning": (
+            "ExcludedApplications / IncludedApplications are understood only by WireGuard for "
+            "Android and its forks (AmneziaWG, WG Tunnel). Desktop clients reject such a config "
+            "with an 'Invalid key' error.\nThe app filter has two mutually exclusive modes: "
+            "a blacklist (ExcludedApplications) or a whitelist (IncludedApplications)."
+        ),
+        "gui_apps_mode_excluded": "Exclude these apps from the tunnel (ExcludedApplications)",
+        "gui_apps_mode_included": "Tunnel ONLY these apps (IncludedApplications)",
+        "gui_packages_label": "Android package names:",
+        "gui_hint_packages": (
+            "One package name per line or comma separated, for example com.android.chrome. "
+            "The name is visible in the app's Google Play link, after '?id='."
+        ),
+        "gui_exclude_rustdesk": "Keep RustDesk outside the tunnel",
+        "gui_exclude_rustdesk_tooltip": (
+            "Adds ExcludedApplications = com.carriez.flutter_hbb — the RustDesk package name,\n"
+            "so remote access keeps working outside the VPN (skipped in the whitelist mode)."
+        ),
+        "gui_keepalive_label": "PersistentKeepalive, seconds:",
+        "gui_keepalive_tooltip": (
+            "Keeps the NAT mapping alive so the peer can reach the client back;\n"
+            "25 is the value recommended by WireGuard.\n"
+            "The field is prefilled from the source config, and with 25 when the key\n"
+            "is missing or set to 0. An empty field leaves the key untouched."
+        ),
         "gui_wiresock_settings": "WireSock settings",
         "gui_wiresock_priority": (
             "Filter DisallowedIPs complements AllowedIPs:\nThe app filter has two mutually "
@@ -172,6 +200,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "msg_line_not_kv": "Строка {num} не похожа на «Ключ = значение»: {line}",
         "msg_missing_allowed_ips": "В секции [Peer] нет ключа AllowedIPs.",
         "msg_invalid_ip_in_key": "Некорректный адрес в {key}: {value}",
+        "msg_invalid_keepalive": "Некорректное значение PersistentKeepalive: {value}",
         "msg_bad_amnezia_json": "Текст не является корректным JSON.",
         "gui_invalid_config_title": "Проверка перед сохранением",
         "gui_invalid_config_question": (
@@ -198,6 +227,34 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_client_label": "VPN-клиент:",
         "gui_client_wireguard": "Классический WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (обфускация + доп. фильтры)",
+        "gui_client_android": "WireGuard для Android (фильтр приложений)",
+        "gui_android_settings": "Параметры WireGuard для Android",
+        "gui_android_warning": (
+            "Ключи ExcludedApplications / IncludedApplications понимает только WireGuard для "
+            "Android и его форки (AmneziaWG, WG Tunnel). Десктопные клиенты откажутся грузить "
+            "такой конфиг с ошибкой «Invalid key».\nФильтр приложений имеет два взаимоисключающих "
+            "режима: чёрный список (ExcludedApplications) или белый (IncludedApplications)."
+        ),
+        "gui_apps_mode_excluded": "Исключить эти приложения из туннеля (ExcludedApplications)",
+        "gui_apps_mode_included": "В туннель ТОЛЬКО эти приложения (IncludedApplications)",
+        "gui_packages_label": "Имена Android-пакетов:",
+        "gui_hint_packages": (
+            "По одному имени пакета в строке или через запятую, например com.android.chrome. "
+            "Имя видно в ссылке Google Play на приложение, после «?id=»."
+        ),
+        "gui_exclude_rustdesk": "Не пускать RustDesk в туннель",
+        "gui_exclude_rustdesk_tooltip": (
+            "Добавляет ExcludedApplications = com.carriez.flutter_hbb — имя пакета RustDesk,\n"
+            "чтобы удалённый доступ продолжил работать мимо VPN\n"
+            "(в режиме белого списка не добавляется)."
+        ),
+        "gui_keepalive_label": "PersistentKeepalive, секунды:",
+        "gui_keepalive_tooltip": (
+            "Держит NAT-трансляцию живой, чтобы пир мог достучаться до клиента;\n"
+            "25 — рекомендованное WireGuard значение.\n"
+            "Поле заполняется значением из исходного конфига, а если ключа нет\n"
+            "или он равен 0 — числом 25. Пустое поле оставляет ключ как есть."
+        ),
         "gui_wiresock_settings": "Параметры WireSock",
         "gui_wiresock_priority": (
             "Фильтр DisallowedIPs дополняет AllowedIPs\nФильтр приложений имеет два взаимоисключающих "

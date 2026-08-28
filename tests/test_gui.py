@@ -48,7 +48,7 @@ def drop_event(path):
 
 
 def test_blocks_visibility(app):
-    """Файлы скрываются при «весь трафик», WireSock-рамка — при классическом WireGuard."""
+    """Файлы скрываются при «весь трафик», рамка настроек видна только у своего клиента."""
     assert app.wg_files.winfo_ismapped()
     app.wg_route.set("all")
     app._on_wg_route_change()
@@ -56,28 +56,50 @@ def test_blocks_visibility(app):
     assert not app.wg_files.winfo_ismapped()
 
     assert not app.wiresock_frame.winfo_ismapped()
+    assert not app.android_frame.winfo_ismapped()
+
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app.update()
     assert app.wiresock_frame.winfo_ismapped()
+    assert not app.android_frame.winfo_ismapped()
+
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app.update()
+    assert app.android_frame.winfo_ismapped()
+    assert not app.wiresock_frame.winfo_ismapped()
 
 
-def test_client_choice_is_two_options(app, tmp_path, wg_conf, ips_file):
-    """Классический WireGuard не добавляет WireSock-ключей, WireSock — добавляет."""
+def test_client_choice_switches_extra_keys(app, tmp_path, wg_conf, ips_file):
+    """Каждый клиент добавляет только свои ключи: обфускацию — WireSock, списки пакетов — Android."""
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
+    app.wg_packages.set("com.android.chrome")
 
     app.wg_client.set(vpn_gui.CLIENT_WIREGUARD)
     app._on_wg_client_change()
     app._refresh_preview()
     app.update()
-    assert "ObfuscateKey" not in app.preview_box.get("1.0", "end")
+    preview = app.preview_box.get("1.0", "end")
+    assert "ObfuscateKey" not in preview
+    assert "ExcludedApplications" not in preview
 
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app._refresh_preview()
     app.update()
-    assert "ObfuscateKey" in app.preview_box.get("1.0", "end")
+    preview = app.preview_box.get("1.0", "end")
+    assert "ObfuscateKey" in preview
+    assert "ExcludedApplications" not in preview
+
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "ExcludedApplications = com.android.chrome" in preview
+    assert "ObfuscateKey" not in preview
 
 
 def test_file_list_remove_single(app, tmp_path, ips_file):
@@ -189,18 +211,86 @@ def test_bypass_lan_checkbox(app, wg_conf, ips_file):
     assert "BypassLanTraffic = true" in app.preview_box.get("1.0", "end")
 
 
-def test_classic_client_ignores_wiresock_checkboxes(app, wg_conf, ips_file):
-    """Классический WireGuard: включённые чекбоксы WireSock не влияют на конфиг."""
+def test_classic_client_ignores_other_client_settings(app, wg_conf, ips_file):
+    """Классический WireGuard: чекбоксы WireSock и Android не влияют на конфиг."""
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
     app.wg_exclude_lan.set(True)
     app.wg_bypass_lan.set(True)
+    app.wg_exclude_rustdesk.set(True)
     app._refresh_preview()
     app.update()
     preview = app.preview_box.get("1.0", "end")
     assert "DisallowedIPs" not in preview
     assert "BypassLanTraffic" not in preview
     assert "rustdesk" not in preview
+    assert "com.carriez.flutter_hbb" not in preview
+
+
+def test_android_packages_and_rustdesk(app, wg_conf, ips_file):
+    """Пакеты из поля попадают в ExcludedApplications, чекбокс дописывает RustDesk;
+    белый список забирает пакеты себе и RustDesk уже не добавляет."""
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app.wg_src.set(str(wg_conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app.wg_packages.set("com.android.chrome\norg.telegram.messenger")
+    app.wg_exclude_rustdesk.set(True)
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert (
+        "ExcludedApplications = com.android.chrome, org.telegram.messenger, com.carriez.flutter_hbb"
+        in preview
+    )
+    assert "IncludedApplications" not in preview
+
+    app.wg_package_mode.set(vpn_gui.APP_MODE_INCLUDED)
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "IncludedApplications = com.android.chrome, org.telegram.messenger" in preview
+    assert "ExcludedApplications" not in preview
+
+
+def test_keepalive_seeded_from_source_config(app, tmp_path, wg_conf, ips_file):
+    """Без ключа в исходнике поле показывает 25, с ненулевым ключом — значение из конфига."""
+    app.wg_src.set(str(wg_conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "25"
+    assert "PersistentKeepalive = 25" in app.preview_box.get("1.0", "end")
+
+    custom = tmp_path / "custom.conf"
+    custom.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nPersistentKeepalive = 15\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(custom))
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "15"
+    assert "PersistentKeepalive = 15" in app.preview_box.get("1.0", "end")
+
+
+def test_keepalive_empty_field_keeps_source_value(app, tmp_path, ips_file):
+    """Очищенное поле — осознанный отказ править ключ: нулевое значение исходника остаётся."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nPersistentKeepalive = 0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "25"
+
+    app.wg_keepalive.delete(0, "end")
+    app._refresh_preview()
+    app.update()
+    assert "PersistentKeepalive = 0" in app.preview_box.get("1.0", "end")
 
 
 def test_preview_wheel_scrolls_box_only(app):

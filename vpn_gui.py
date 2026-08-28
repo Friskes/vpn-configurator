@@ -13,13 +13,18 @@ import customtkinter as ctk
 from vpn_configurator import (
     ALL_TRAFFIC_IPS,
     DEFAULT_DISALLOWED_APPS,
+    DEFAULT_EXCLUDED_APPS,
+    DEFAULT_KEEPALIVE,
     LAN_EXCLUDE_IPS,
+    MAX_KEEPALIVE,
     OUTPUT_FORMATS,
     VpnConfiguratorError,
     build_wireguard_conf,
     collect_app_names,
     collect_ips,
     merge_unique,
+    parse_app_names,
+    read_persistent_keepalive,
     validate_amnezia_text,
     validate_wireguard_text,
 )
@@ -38,8 +43,11 @@ MERGE_UI = {
 
 CLIENT_WIREGUARD = "wireguard"
 CLIENT_WIRESOCK = "wiresock"
+CLIENT_ANDROID = "android"
 APP_MODE_DISALLOWED = "disallowed"
 APP_MODE_ALLOWED = "allowed"
+APP_MODE_EXCLUDED = "excluded"
+APP_MODE_INCLUDED = "included"
 
 IPS_CACHE_MAX = 16
 SYNTAX_MAX_LINES = 3000
@@ -347,6 +355,48 @@ class FileListPicker(ctk.CTkFrame):
             remove_button.grid(row=row, column=1, sticky="e", padx=(0, 4), pady=1)
 
 
+class TextListBox(ctk.CTkFrame):
+    """Подпись, подсказка и многострочное поле для списка, который печатают руками:
+    имя Android-пакета неоткуда взять перетаскиванием файла, как имя .exe."""
+
+    def __init__(
+        self,
+        master: ctk.CTkFrame,
+        app: "VpnConfiguratorApp",
+        label_key: str,
+        hint_key: str,
+        height: int = 90,
+    ) -> None:
+        super().__init__(master, fg_color="transparent")
+        self.grid_columnconfigure(0, weight=1)
+
+        label = ctk.CTkLabel(self, anchor="w")
+        label.grid(row=0, column=0, sticky="w")
+        app.register_i18n(label, label_key)
+
+        hint = ctk.CTkLabel(
+            self,
+            anchor="w",
+            justify="left",
+            wraplength=580,
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+        )
+        hint.grid(row=1, column=0, sticky="w", pady=(0, 2))
+        app.register_i18n(hint, hint_key)
+
+        self.textbox = ctk.CTkTextbox(self, height=height, wrap="none")
+        self.textbox.grid(row=2, column=0, sticky="ew")
+        self.textbox.bind("<KeyRelease>", lambda _event: app.schedule_preview())
+
+    def get(self) -> str:
+        return self.textbox.get("1.0", "end-1c")
+
+    def set(self, text: str) -> None:
+        self.textbox.delete("1.0", "end")
+        self.textbox.insert("1.0", text)
+
+
 class VpnConfiguratorApp(ctk.CTk):
     """Главное окно: вкладки и переключатели в верхней полосе, настройки страницы,
     ниже — редактируемый предпросмотр результата с подсветкой синтаксиса."""
@@ -374,6 +424,7 @@ class VpnConfiguratorApp(ctk.CTk):
         self._preview_dirty = False
         self._preview_is_placeholder = True
         self._ips_cache: dict[tuple, tuple] = {}
+        self._keepalive_source: str | None = None
 
         self.title(tr("app_title"))
         self.pages: dict[str, ctk.CTkFrame] = {}
@@ -610,6 +661,7 @@ class VpnConfiguratorApp(ctk.CTk):
         client_keys = [
             (CLIENT_WIREGUARD, "gui_client_wireguard"),
             (CLIENT_WIRESOCK, "gui_client_wiresock"),
+            (CLIENT_ANDROID, "gui_client_android"),
         ]
         for row, (value, key) in enumerate(client_keys, start=1):
             radio = ctk.CTkRadioButton(
@@ -618,32 +670,9 @@ class VpnConfiguratorApp(ctk.CTk):
             radio.grid(row=row, column=0, sticky="w", pady=2)
             self.register_i18n(radio, key)
 
-        self.wiresock_frame = ctk.CTkFrame(
-            page,
-            corner_radius=8,
-            border_width=1,
-            border_color=("gray65", "gray35"),
-            fg_color=("gray90", "gray13"),
+        self.wiresock_frame = self._build_client_frame(
+            page, 6, "gui_wiresock_settings", "gui_wiresock_priority"
         )
-        self.wiresock_frame.grid(row=6, column=0, sticky="ew", pady=(6, 3))
-        self.wiresock_frame.grid_columnconfigure(0, weight=1)
-
-        wiresock_title = ctk.CTkLabel(
-            self.wiresock_frame, anchor="w", font=ctk.CTkFont(size=12, weight="bold")
-        )
-        wiresock_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 0))
-        self.register_i18n(wiresock_title, "gui_wiresock_settings")
-
-        wiresock_priority = ctk.CTkLabel(
-            self.wiresock_frame,
-            anchor="w",
-            justify="left",
-            wraplength=600,
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-        )
-        wiresock_priority.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
-        self.register_i18n(wiresock_priority, "gui_wiresock_priority")
 
         self.wg_exclude_lan = ctk.BooleanVar(value=False)
         exclude_lan_box = ctk.CTkCheckBox(
@@ -685,15 +714,91 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_apps.grid(row=6, column=0, sticky="ew", padx=12, pady=(4, 10))
         self._file_lists.append(self.wg_apps)
 
+        self.android_frame = self._build_client_frame(
+            page, 7, "gui_android_settings", "gui_android_warning"
+        )
+
+        self.wg_exclude_rustdesk = ctk.BooleanVar(value=False)
+        exclude_rustdesk_box = ctk.CTkCheckBox(
+            self.android_frame, variable=self.wg_exclude_rustdesk, command=self.schedule_preview
+        )
+        exclude_rustdesk_box.grid(row=2, column=0, sticky="w", padx=12, pady=(4, 0))
+        self.register_i18n(exclude_rustdesk_box, "gui_exclude_rustdesk")
+        Tooltip(exclude_rustdesk_box, "gui_exclude_rustdesk_tooltip")
+
+        self.wg_package_mode = ctk.StringVar(value=APP_MODE_EXCLUDED)
+        package_mode_frame = ctk.CTkFrame(self.android_frame, fg_color="transparent")
+        package_mode_frame.grid(row=3, column=0, sticky="w", padx=12, pady=(6, 0))
+        for row, (value, key) in enumerate(
+            [(APP_MODE_EXCLUDED, "gui_apps_mode_excluded"), (APP_MODE_INCLUDED, "gui_apps_mode_included")]
+        ):
+            radio = ctk.CTkRadioButton(
+                package_mode_frame,
+                variable=self.wg_package_mode,
+                value=value,
+                command=self.schedule_preview,
+            )
+            radio.grid(row=row, column=0, sticky="w", pady=2)
+            self.register_i18n(radio, key)
+
+        self.wg_packages = TextListBox(
+            self.android_frame, self, "gui_packages_label", "gui_hint_packages"
+        )
+        self.wg_packages.grid(row=4, column=0, sticky="ew", padx=12, pady=(6, 10))
+
+        keepalive_frame = ctk.CTkFrame(page, fg_color="transparent")
+        keepalive_frame.grid(row=8, column=0, sticky="w", pady=(6, 0))
+        keepalive_label = ctk.CTkLabel(keepalive_frame)
+        keepalive_label.grid(row=0, column=0, padx=(0, 10))
+        self.register_i18n(keepalive_label, "gui_keepalive_label")
+
+        self.wg_keepalive = ctk.CTkEntry(keepalive_frame, width=70)
+        self.wg_keepalive.grid(row=0, column=1)
+        self.wg_keepalive.insert(0, str(DEFAULT_KEEPALIVE))
+        self.wg_keepalive.bind("<KeyRelease>", lambda _event: self.schedule_preview())
+        Tooltip(keepalive_label, "gui_keepalive_tooltip")
+        Tooltip(self.wg_keepalive, "gui_keepalive_tooltip")
+
         self.wg_dst = FilePickerRow(
             page, self, "gui_new_conf", "save", self._wg_save_options, dnd=False
         )
-        self.wg_dst.grid(row=7, column=0, sticky="ew", pady=3)
+        self.wg_dst.grid(row=9, column=0, sticky="ew", pady=3)
 
-        self._create_run_button(page, 8, "gui_run_wg", self._run_wireguard)
+        self._create_run_button(page, 10, "gui_run_wg", self._run_wireguard)
 
         self._on_wg_route_change()
         self._on_wg_client_change()
+
+    def _build_client_frame(
+        self, page: ctk.CTkFrame, row: int, title_key: str, note_key: str
+    ) -> ctk.CTkFrame:
+        """Рамка настроек одного VPN-клиента: заголовок и пояснение занимают строки 0-1,
+        виджеты вызывающего кода размещаются начиная со строки 2."""
+        frame = ctk.CTkFrame(
+            page,
+            corner_radius=8,
+            border_width=1,
+            border_color=("gray65", "gray35"),
+            fg_color=("gray90", "gray13"),
+        )
+        frame.grid(row=row, column=0, sticky="ew", pady=(6, 3))
+        frame.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(frame, anchor="w", font=ctk.CTkFont(size=12, weight="bold"))
+        title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 0))
+        self.register_i18n(title, title_key)
+
+        note = ctk.CTkLabel(
+            frame,
+            anchor="w",
+            justify="left",
+            wraplength=600,
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+        )
+        note.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
+        self.register_i18n(note, note_key)
+        return frame
 
     def _conf_open_options(self) -> dict:
         return {"filetypes": [(tr("gui_filetype_conf"), "*.conf"), (tr("gui_filetype_all"), "*.*")]}
@@ -715,33 +820,67 @@ class VpnConfiguratorApp(ctk.CTk):
         self.schedule_preview()
 
     def _on_wg_client_change(self) -> None:
-        if self.wg_client.get() == CLIENT_WIRESOCK:
-            self.wiresock_frame.grid()
-        else:
-            self.wiresock_frame.grid_remove()
+        client = self.wg_client.get()
+        for name, frame in ((CLIENT_WIRESOCK, self.wiresock_frame), (CLIENT_ANDROID, self.android_frame)):
+            if name == client:
+                frame.grid()
+            else:
+                frame.grid_remove()
         self.schedule_preview()
 
-    def _wg_wiresock_kwargs(self) -> dict:
-        """Собирает WireSock-аргументы build_wireguard_conf из состояния формы;
-        для классического WireGuard возвращает пустой набор — конфиг остаётся стандартным."""
-        if self.wg_client.get() != CLIENT_WIRESOCK:
-            return {}
-        disallowed_ips = list(LAN_EXCLUDE_IPS) if self.wg_exclude_lan.get() else []
-        if self.wg_disallowed_ips.paths:
-            disallowed_ips = merge_unique(
-                disallowed_ips, self._collect_ips_cached(self.wg_disallowed_ips.paths)
+    def _wg_client_kwargs(self) -> dict:
+        """Собирает аргументы build_wireguard_conf из состояния формы: PersistentKeepalive общий
+        для всех клиентов, остальные ключи добавляет только выбранная рамка настроек."""
+        kwargs: dict = {"keepalive": self._keepalive_value()}
+        client = self.wg_client.get()
+
+        if client == CLIENT_WIRESOCK:
+            disallowed_ips = list(LAN_EXCLUDE_IPS) if self.wg_exclude_lan.get() else []
+            if self.wg_disallowed_ips.paths:
+                disallowed_ips = merge_unique(
+                    disallowed_ips, self._collect_ips_cached(self.wg_disallowed_ips.paths)
+                )
+            apps = collect_app_names(self.wg_apps.paths) if self.wg_apps.paths else []
+            allowed_mode = self.wg_app_mode.get() == APP_MODE_ALLOWED
+            kwargs.update(
+                disallowed_ips=disallowed_ips,
+                disallowed_apps=[] if allowed_mode else apps,
+                allowed_apps=apps if allowed_mode else [],
+                auto_disallowed_apps=(
+                    DEFAULT_DISALLOWED_APPS if self.wg_exclude_lan.get() and not allowed_mode else ()
+                ),
+                bypass_lan=self.wg_bypass_lan.get(),
             )
-        apps = collect_app_names(self.wg_apps.paths) if self.wg_apps.paths else []
-        allowed_mode = self.wg_app_mode.get() == APP_MODE_ALLOWED
-        return {
-            "disallowed_ips": disallowed_ips,
-            "disallowed_apps": [] if allowed_mode else apps,
-            "allowed_apps": apps if allowed_mode else [],
-            "auto_disallowed_apps": (
-                DEFAULT_DISALLOWED_APPS if self.wg_exclude_lan.get() and not allowed_mode else ()
-            ),
-            "bypass_lan": self.wg_bypass_lan.get(),
-        }
+        elif client == CLIENT_ANDROID:
+            packages = parse_app_names(self.wg_packages.get())
+            included_mode = self.wg_package_mode.get() == APP_MODE_INCLUDED
+            kwargs.update(
+                excluded_apps=[] if included_mode else packages,
+                included_apps=packages if included_mode else [],
+                auto_excluded_apps=(
+                    DEFAULT_EXCLUDED_APPS
+                    if self.wg_exclude_rustdesk.get() and not included_mode
+                    else ()
+                ),
+            )
+        return kwargs
+
+    def _keepalive_value(self) -> int | None:
+        """Число из поля PersistentKeepalive; пустое или неподходящее значение означает
+        «не трогать ключ», а не ошибку: предпросмотр должен строиться и во время набора."""
+        text = self.wg_keepalive.get().strip()
+        if not text.isdigit() or int(text) > MAX_KEEPALIVE:
+            return None
+        return int(text)
+
+    def _sync_keepalive_field(self, source: str) -> None:
+        """Подставляет в поле значение из выбранного конфига, а если ключа нет или он нулевой —
+        рекомендованные 25. Срабатывает только на смену файла, чтобы не затирать правку руками."""
+        if source == self._keepalive_source:
+            return
+        self._keepalive_source = source
+        self.wg_keepalive.delete(0, "end")
+        self.wg_keepalive.insert(0, str(read_persistent_keepalive(source) or DEFAULT_KEEPALIVE))
 
     def _collect_ips_cached(self, paths: list[str]) -> list[str]:
         """Читает и валидирует файлы с кэшем по (путь, mtime, размер), чтобы предпросмотр не
@@ -776,6 +915,7 @@ class VpnConfiguratorApp(ctk.CTk):
         """Единый конвейер генерации WG-конфига для предпросмотра и сохранения."""
         src = self.wg_src.get()
         self._require(src, "gui_err_need_conf")
+        self._sync_keepalive_field(src)
         if self.wg_route.get() == "all":
             ips = list(ALL_TRAFFIC_IPS)
         else:
@@ -785,7 +925,7 @@ class VpnConfiguratorApp(ctk.CTk):
             ips,
             src,
             self.wg_client.get() == CLIENT_WIRESOCK,
-            **self._wg_wiresock_kwargs(),
+            **self._wg_client_kwargs(),
         )
         return text, len(ips)
 

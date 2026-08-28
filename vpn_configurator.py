@@ -19,6 +19,9 @@ COMMENT_PREFIXES = ("#", ";", "//")
 MAX_INVALID_IN_A_ROW = 30
 OBFUSCATE_KEY = "12345678901234567890123456789012"
 DEFAULT_DISALLOWED_APPS = ("rustdesk",)
+DEFAULT_EXCLUDED_APPS = ("com.carriez.flutter_hbb",)
+DEFAULT_KEEPALIVE = 25
+MAX_KEEPALIVE = 65535
 LAN_EXCLUDE_IPS = (
     "192.168.0.0/16",
     "172.16.0.0/12",
@@ -256,6 +259,23 @@ def _remove_key(lines: list[str], section: str, key: str) -> None:
         del lines[index]
 
 
+def read_persistent_keepalive(conf_path: Path | str) -> int | None:
+    """Ненулевой PersistentKeepalive из [Peer] существующего конфига, иначе None.
+    Нечитаемый файл, отсутствие ключа, нечисловое значение и 0 равнозначны «не задан»."""
+    try:
+        lines = _read_text(Path(conf_path)).splitlines()
+    except (VpnConfiguratorError, OSError):
+        return None
+    if "peer" not in _find_sections(lines):
+        return None
+    for value in _get_values(lines, "peer", "PersistentKeepalive"):
+        with suppress(ValueError):
+            seconds = int(value)
+            if 0 < seconds <= MAX_KEEPALIVE:
+                return seconds
+    return None
+
+
 def build_wireguard_conf(
     source_ips: Sequence[str],
     conf_path: Path | str,
@@ -266,13 +286,20 @@ def build_wireguard_conf(
     allowed_apps: Sequence[str] = (),
     auto_disallowed_apps: Sequence[str] = (),
     bypass_lan: bool = False,
+    excluded_apps: Sequence[str] = (),
+    included_apps: Sequence[str] = (),
+    auto_excluded_apps: Sequence[str] = (),
+    keepalive: int | None = None,
 ) -> str:
     """Возвращает текст нового WireGuard-конфига. Правки построчные — комментарии, повторяющиеся
     ключи и регистр исходника сохраняются, ключи/секции ищутся без учёта регистра.
     allowed_apps и disallowed_apps взаимоисключающие: выбор одного удаляет другой ключ;
-    auto_disallowed_apps дописываются в чёрный список, только если белого нет нигде."""
+    auto_disallowed_apps дописываются в чёрный список, только если белого нет нигде.
+    included_apps/excluded_apps — та же пара для Android-ключей в секции [Interface]."""
     if allowed_apps and disallowed_apps:
         raise ValueError("allowed_apps and disallowed_apps are mutually exclusive")
+    if included_apps and excluded_apps:
+        raise ValueError("included_apps and excluded_apps are mutually exclusive")
 
     conf_path = Path(conf_path)
     if not conf_path.is_file():
@@ -302,6 +329,15 @@ def build_wireguard_conf(
         _set_key(lines, "peer", "DisallowedApps", ", ".join(merged))
         _remove_key(lines, "peer", "AllowedApps")
 
+    if included_apps:
+        merged = merge_unique(_get_values(lines, "interface", "IncludedApplications"), included_apps)
+        _set_key(lines, "interface", "IncludedApplications", ", ".join(merged))
+        _remove_key(lines, "interface", "ExcludedApplications")
+    elif excluded_apps:
+        merged = merge_unique(_get_values(lines, "interface", "ExcludedApplications"), excluded_apps)
+        _set_key(lines, "interface", "ExcludedApplications", ", ".join(merged))
+        _remove_key(lines, "interface", "IncludedApplications")
+
     if obfuscate:
         _set_key(lines, "interface", "ObfuscateKey", OBFUSCATE_KEY)
         _set_key(lines, "interface", "ObfuscateMethod", "xor")
@@ -309,9 +345,22 @@ def build_wireguard_conf(
     if bypass_lan:
         _set_key(lines, "interface", "BypassLanTraffic", "true")
 
+    if keepalive is not None:
+        _set_key(lines, "peer", "PersistentKeepalive", str(keepalive))
+
     if auto_disallowed_apps and not allowed_apps and not _get_values(lines, "peer", "AllowedApps"):
         merged = merge_unique(_get_values(lines, "peer", "DisallowedApps"), auto_disallowed_apps)
         _set_key(lines, "peer", "DisallowedApps", ", ".join(merged))
+
+    if (
+        auto_excluded_apps
+        and not included_apps
+        and not _get_values(lines, "interface", "IncludedApplications")
+    ):
+        merged = merge_unique(
+            _get_values(lines, "interface", "ExcludedApplications"), auto_excluded_apps
+        )
+        _set_key(lines, "interface", "ExcludedApplications", ", ".join(merged))
 
     return "\n".join(lines) + "\n"
 
@@ -357,6 +406,9 @@ def validate_wireguard_text(text: str) -> list[str]:
             for value in _get_values(lines, "peer", key):
                 if not _is_valid_ip_value(value):
                     problems.append(tr("msg_invalid_ip_in_key").format(key=key, value=value))
+        for value in _get_values(lines, "peer", "PersistentKeepalive"):
+            if not value.isdigit() or int(value) > MAX_KEEPALIVE:
+                problems.append(tr("msg_invalid_keepalive").format(value=value))
 
     return problems
 

@@ -468,6 +468,112 @@ class TestWireSockRules:
             )
 
 
+@pytest.fixture
+def android_conf(tmp_path):
+    def make(interface_extra="", peer_extra=""):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            f"[Interface]\nPrivateKey = abc\n{interface_extra}\n[Peer]\nPublicKey = def\n{peer_extra}",
+            encoding="utf-8",
+        )
+        return conf
+
+    return make
+
+
+class TestAndroidRules:
+    def test_absent_by_default(self, wg_conf):
+        text = build(["8.8.8.8"], wg_conf)
+        assert "ExcludedApplications" not in text
+        assert "IncludedApplications" not in text
+
+    def test_excluded_lands_in_interface_section(self, wg_conf):
+        """Android читает списки приложений только из [Interface]; в [Peer] они игнорируются."""
+        text = build(["8.8.8.8"], wg_conf, excluded_apps=["com.android.chrome"])
+        interface, _, peer = text.partition("[Peer]")
+        assert "ExcludedApplications = com.android.chrome" in interface
+        assert "ExcludedApplications" not in peer
+
+    def test_auto_excluded_adds_rustdesk_package(self, wg_conf):
+        text = build(["8.8.8.8"], wg_conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
+        assert "ExcludedApplications = com.carriez.flutter_hbb" in text
+
+    def test_auto_excluded_merged_with_existing(self, android_conf):
+        conf = android_conf(interface_extra="ExcludedApplications = com.android.chrome\n")
+        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
+        assert "ExcludedApplications = com.android.chrome, com.carriez.flutter_hbb" in text
+
+    def test_auto_excluded_not_duplicated(self, android_conf):
+        conf = android_conf(interface_extra="excludedapplications = com.carriez.flutter_hbb\n")
+        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
+        assert text.count("com.carriez.flutter_hbb") == 1
+
+    def test_whitelist_removes_excluded_and_skips_rustdesk(self, android_conf):
+        conf = android_conf(interface_extra="ExcludedApplications = com.android.chrome\n")
+        text = build(
+            ["8.8.8.8"],
+            conf,
+            included_apps=["org.telegram.messenger"],
+            auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS,
+        )
+        assert "IncludedApplications = org.telegram.messenger" in text
+        assert "ExcludedApplications" not in text
+        assert "com.carriez.flutter_hbb" not in text
+
+    def test_blacklist_removes_existing_included(self, android_conf):
+        conf = android_conf(interface_extra="IncludedApplications = com.android.chrome\n")
+        text = build(["8.8.8.8"], conf, excluded_apps=["org.telegram.messenger"])
+        assert "ExcludedApplications = org.telegram.messenger" in text
+        assert "IncludedApplications" not in text
+
+    def test_rustdesk_skipped_when_source_has_included(self, android_conf):
+        conf = android_conf(interface_extra="IncludedApplications = com.android.chrome\n")
+        text = build(["8.8.8.8"], conf, auto_excluded_apps=core.DEFAULT_EXCLUDED_APPS)
+        assert "ExcludedApplications" not in text
+
+    def test_both_package_lists_rejected(self, wg_conf):
+        with pytest.raises(ValueError):
+            build(
+                ["8.8.8.8"],
+                wg_conf,
+                excluded_apps=["com.android.chrome"],
+                included_apps=["org.telegram.messenger"],
+            )
+
+
+class TestPersistentKeepalive:
+    def test_untouched_without_argument(self, android_conf):
+        conf = android_conf(peer_extra="PersistentKeepalive = 0\n")
+        assert "PersistentKeepalive = 0" in build(["8.8.8.8"], conf)
+
+    def test_added_when_missing(self, wg_conf):
+        text = build(["8.8.8.8"], wg_conf, keepalive=core.DEFAULT_KEEPALIVE)
+        interface, _, peer = text.partition("[Peer]")
+        assert "PersistentKeepalive = 25" in peer
+        assert "PersistentKeepalive" not in interface
+
+    def test_zero_replaced_without_duplicating_key(self, android_conf):
+        conf = android_conf(peer_extra="persistentkeepalive = 0\n")
+        text = build(["8.8.8.8"], conf, keepalive=25)
+        assert "PersistentKeepalive = 25" in text
+        assert text.lower().count("persistentkeepalive") == 1
+
+    def test_read_missing_key(self, wg_conf):
+        assert core.read_persistent_keepalive(wg_conf) is None
+
+    @pytest.mark.parametrize("value", ["0", "abc", "", "-5", "99999"])
+    def test_read_unusable_values_are_none(self, android_conf, value):
+        conf = android_conf(peer_extra=f"PersistentKeepalive = {value}\n")
+        assert core.read_persistent_keepalive(conf) is None
+
+    def test_read_existing_value(self, android_conf):
+        conf = android_conf(peer_extra="persistentkeepalive = 15\n")
+        assert core.read_persistent_keepalive(conf) == 15
+
+    def test_read_missing_file(self, tmp_path):
+        assert core.read_persistent_keepalive(tmp_path / "nope.conf") is None
+
+
 class TestValidateWireguardText:
     def test_generated_config_is_clean(self, wg_conf):
         text = build(["8.8.8.8"], wg_conf, obfuscate=True, bypass_lan=True)
@@ -510,6 +616,17 @@ class TestValidateWireguardText:
             "[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\n[Peer]\nAllowedIPs = 1.1.1.1\n"
         )
         assert problems
+
+    @pytest.mark.parametrize("value", ["abc", "-5", "99999"])
+    def test_invalid_keepalive_flagged(self, value):
+        problems = core.validate_wireguard_text(
+            f"[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\nPersistentKeepalive = {value}\n"
+        )
+        assert any(value in p for p in problems)
+
+    def test_valid_keepalive_accepted(self):
+        text = "[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\nPersistentKeepalive = 25\n"
+        assert core.validate_wireguard_text(text) == []
 
 
 class TestValidateAmneziaText:
