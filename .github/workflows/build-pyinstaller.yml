@@ -6,57 +6,78 @@ on:
       version:
         description: "Release version"
         required: true
+      force-rebuild:
+        description: "Rebuild even if the release already has all assets"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  build-windows:
+  test:
     if: github.actor == 'Friskes'
+    uses: ./.github/workflows/tests.yml
+
+  check-release:
+    if: github.actor == 'Friskes'
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - name: Check if release already contains all assets
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          RESPONSE=$(mktemp)
+          STATUS=$(curl -s -o "$RESPONSE" -w "%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/v$VERSION)
+          if [ "$STATUS" = "404" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          elif [ "$STATUS" = "200" ]; then
+            FOUND=$(jq --arg v "$VERSION" \
+              '[.assets[].name] as $names |
+               ["vpn_configurator_v\($v).exe",
+                "vpn_configurator_v\($v).macos-arm64.zip",
+                "vpn_configurator_v\($v).macos-x86_64.zip"] |
+               map(. as $n | $names | index($n) != null) | all' "$RESPONSE")
+            if [ "$FOUND" = "true" ]; then
+              echo "Release v$VERSION already contains all assets. Skipping build."
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release v$VERSION is incomplete — rebuilding missing assets."
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "GitHub API returned unexpected status $STATUS — failing instead of guessing."
+            exit 1
+          fi
+
+  build-windows:
+    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
+    needs: [test, check-release]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Check if artifact already exists in releases
-        shell: bash
-        run: |
-          VERSION=vpn_configurator_v${{ github.event.inputs.version }}.exe
-          echo "Checking if release contains $VERSION"
-          EXISTS=$(curl -s -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${{ github.repository }}/releases \
-            | jq -e '.[] | select(.assets[].name == "'$VERSION'")' > /dev/null && echo yes || echo no)
-          if [ "$EXISTS" = "yes" ]; then
-            echo "Artifact already exists. Skipping build."
-            exit 0
-          fi
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        id: setup-python
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version-file: '.python-version'
-
-      - uses: actions/cache@v3
-        id: cache-dependencies
-        with:
-          path: |
-            venv
-          key: ${{ runner.os }}-venv-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/*requirements_dev.txt') }}
-
-      - name: Install dependencies
-        if: steps.cache-dependencies.outputs.cache-hit != 'true'
-        run: |
-          python -m venv venv
-          venv\Scripts\pip install --upgrade pip
-          venv\Scripts\pip install -r requirements_dev.txt
+          enable-cache: true
 
       - name: Build Windows binary
         run: |
-          venv\Scripts\pyinstaller -c -F vpn_configurator.py
+          uv run --frozen pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 
       - name: Rename binary with version
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          mv dist/vpn_configurator.exe vpn_configurator_v${{ github.event.inputs.version }}.exe
+          mv dist/vpn_configurator.exe "vpn_configurator_v${env:VERSION}.exe"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -64,124 +85,74 @@ jobs:
           path: vpn_configurator_v${{ github.event.inputs.version }}.exe
 
   build-macos-arm64:
-    if: github.actor == 'Friskes'
+    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
+    needs: [test, check-release]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Check if artifact already exists in releases
-        shell: bash
-        run: |
-          VERSION=vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64
-          echo "Checking if release contains $VERSION"
-          EXISTS=$(curl -s -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${{ github.repository }}/releases \
-            | jq -e '.[] | select(.assets[].name == "'$VERSION'")' > /dev/null && echo yes || echo no)
-          if [ "$EXISTS" = "yes" ]; then
-            echo "Artifact already exists. Skipping build."
-            exit 0
-          fi
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        id: setup-python
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version-file: '.python-version'
+          enable-cache: true
 
-      - uses: actions/cache@v3
-        id: cache-dependencies
-        with:
-          path: |
-            venv
-          key: ${{ runner.os }}-venv-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/*requirements_dev.txt') }}
-
-      - name: Install dependencies
-        if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      - name: Build macOS arm64 .app bundle
         run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements_dev.txt
-
-      - name: Build macOS arm64 binary
-        run: |
-          . venv/bin/activate
-          pyinstaller -c -F vpn_configurator.py
+          uv run --frozen pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 
       - name: Check binary architecture
         run: |
-          file dist/vpn_configurator
+          file dist/vpn_configurator.app/Contents/MacOS/vpn_configurator
 
-      - name: Rename binary with version
+      - name: Package .app into zip
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          mv dist/vpn_configurator vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64
+          ditto -c -k --keepParent dist/vpn_configurator.app "vpn_configurator_v${VERSION}.macos-arm64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: vpn_configurator_macos_arm64
-          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64
+          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64.zip
 
   build-macos-x86_64:
-    if: github.actor == 'Friskes'
+    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
+    needs: [test, check-release]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
-
-      - name: Check if artifact already exists in releases
-        shell: bash
-        run: |
-          VERSION=vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64
-          echo "Checking if release contains $VERSION"
-          EXISTS=$(curl -s -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${{ github.repository }}/releases \
-            | jq -e '.[] | select(.assets[].name == "'$VERSION'")' > /dev/null && echo yes || echo no)
-          if [ "$EXISTS" = "yes" ]; then
-            echo "Artifact already exists. Skipping build."
-            exit 0
-          fi
 
       - name: Install Rosetta 2
         run: |
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        id: setup-python
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version-file: '.python-version'
+          enable-cache: true
 
-      - uses: actions/cache@v3
-        id: cache-dependencies
-        with:
-          path: |
-            venv
-          key: ${{ runner.os }}-venv-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/*requirements_dev.txt') }}
-
-      - name: Install dependencies
-        if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      - name: Install x86_64 Python
         run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements_dev.txt
+          uv python install cpython-3.12-macos-x86_64
 
-      - name: Build macOS x86_64 binary
+      - name: Build macOS x86_64 .app bundle
         run: |
-          . venv/bin/activate
-          arch -x86_64 pyinstaller -c -F vpn_configurator.py
+          uv run --frozen --python cpython-3.12-macos-x86_64 pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 
       - name: Check binary architecture
         run: |
-          file dist/vpn_configurator
+          file dist/vpn_configurator.app/Contents/MacOS/vpn_configurator
 
-      - name: Rename binary with version
+      - name: Package .app into zip
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          mv dist/vpn_configurator vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64
+          ditto -c -k --keepParent dist/vpn_configurator.app "vpn_configurator_v${VERSION}.macos-x86_64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: vpn_configurator_macos_x86_64
-          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64
+          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64.zip
 
   publish-release:
     if: github.actor == 'Friskes'
@@ -213,5 +184,5 @@ jobs:
           name: Release v${{ github.event.inputs.version }}
           files: |
             artifacts/vpn_configurator_v${{ github.event.inputs.version }}.exe
-            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64
-            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64
+            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64.zip
+            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64.zip

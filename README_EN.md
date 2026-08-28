@@ -6,7 +6,7 @@
 > This material is prepared for scientific and technical purposes. Using the provided materials for purposes other than familiarization may be a violation of applicable law.
 > The author is not responsible for any improper use of this material!
 
-**VPN Configurator** is an interactive command-line tool for creating VPN client configuration files with **split tunneling**, as well as for converting and merging IP address files.
+**VPN Configurator** is a GUI tool for creating VPN client configurations with **split tunneling** and for merging IP address files. The interface language — Russian or English — is detected automatically and can be switched manually.
 
 **Split tunneling** is a VPN mode where only traffic to specified websites or services goes through the VPN, while everything else continues to work at full speed without any slowdown.
 
@@ -14,9 +14,30 @@
 
 ---
 
-### Ready-to-use IP address sets in the `ips/` folder
+## Features
 
-The repository already includes IP address files for the following services:
+**1. WireGuard config (Amnezia / WireSock / WireGuard)**
+Based on an existing `.conf` file, creates a new config with IP addresses for split tunneling:
+
+- only the specified IP addresses — taken from address files;
+- or all traffic (`0.0.0.0/0`);
+- **Classic WireGuard** (WireGuard, Amnezia and compatible clients) — a config with no non-standard keys;
+- **WireSock** — adds obfuscation (masks WireGuard traffic from DPI) plus extra filters: excluding IP addresses from the tunnel (`DisallowedIPs`) and an app blacklist or whitelist (`DisallowedApps` / `AllowedApps`). Into the app list you can drop an executable of any OS (`.exe`, a macOS/Linux binary, `.app`) — the file name becomes the app name — or a text file listing app names.
+
+**2. Merge / convert IP address files**
+Merges multiple files into one, removing duplicates and invalid addresses. Input files — in any mix, the format is detected automatically, the extension does not matter:
+
+- addresses in any text form — one per line, comma, space or semicolon separated;
+- Windows `route ADD <ip> MASK <mask> <gateway>` commands;
+- Amnezia `.json`.
+
+Output format of your choice: plaintext `.txt`, Amnezia `.json`, or Windows `route` commands (`.bat`). One input file + a different output format = conversion.
+
+In the GUI you can drag & drop files straight into the program window, remove them one by one with the button next to each, and the result is shown in an editable preview with syntax highlighting — you can tweak the text by hand before saving.
+
+---
+
+### Ready-to-use IP address sets in the `ips/` folder
 
 | File | Service |
 |---|---|
@@ -34,102 +55,57 @@ The repository already includes IP address files for the following services:
 | `anthropic.txt` | Anthropic / Claude Code |
 | `all.txt` | All services above merged into a single file |
 
-You can use these files as-is or find additional sets using the links in the [Where to get IP addresses](#where-to-get-ip-addresses) section.
+More sets — in the [Where to get IP addresses](#where-to-get-ip-addresses) section.
 
 ---
 
-## What the Program Can Do
+## How to Run
 
-After launching, the program shows an interactive menu with five modes:
+### Windows (.exe)
 
-**1. Create a config for Amnezia / WireSock / WireGuard**
-Based on an existing `.conf` VPN file, creates a new configuration file with the specified IP addresses for split tunneling over the WireGuard protocol.
-- Option A: only the **specified IPs** go through the VPN
-- Option B: **all traffic** goes through the VPN (only obfuscation is added to the file)
-- Supported clients: **Amnezia**, **WireSock**, **WireGuard**, and other compatible WG clients.
+1. Download the `.exe` from the releases page: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
+2. **Double-click** it — the graphical interface will open.
 
-**2. Create a config for Nekobox (Android)**
-Creates a `.json` configuration file for the Nekobox app on Android using the VLESS protocol.
-- Option A: only the **specified IPs** go through the VPN, all other traffic is direct
-- Option B: **all traffic** goes through the VPN, except the specified IPs
+### macOS
 
-**3. Convert: Amnezia → plaintext**
-Converts an IP address file from the Amnezia format (`.json`) to a plain text format (`.txt`), where each IP is on its own line.
+1. Download the archive for your CPU architecture from the releases page: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
 
-**4. Convert: plaintext → Amnezia**
-Reverse conversion — from plain text format to Amnezia format (`.json`).
-
-**5. Merge IP address files**
-Combines multiple IP address files (in plaintext or Amnezia format) into a single file, automatically removing duplicates.
-
----
-
-## How to Run the Program
-
-### Option 1 — .exe file (Windows)
-
-1. Download the `.exe` file from the releases page: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
-2. **Double-click** the downloaded file — a console window with the program menu will open
-3. Type the number of the desired option and follow the prompts
-
----
-
-### Option 2 — file for macOS
-
-> Unlike Windows, double-clicking a binary file on macOS does not open it in a terminal — you need to launch it manually through the **Terminal** app (not "Console").
-
-1. Download the file for your CPU architecture from the releases page: **[⬇ GitHub Releases](https://github.com/Friskes/vpn-configurator/releases/latest)**
-
-   | Processor | File to download |
+   | Processor | File |
    |---|---|
-   | Apple M1/M2/M3/M4 | `vpn_configurator_vX.X.X.macos-arm64` |
-   | Intel | `vpn_configurator_vX.X.X.macos-x86_64` |
+   | Apple M1/M2/M3/M4 | `vpn_configurator_vX.X.X.macos-arm64.zip` |
+   | Intel | `vpn_configurator_vX.X.X.macos-x86_64.zip` |
 
    > Not sure which one you have? Click  → "About This Mac" — the "Chip" or "Processor" line will tell you.
-2. Open the **Terminal** app (not "Console")
-3. Navigate to the folder with the downloaded file:
-   ```bash
-   cd ~/Downloads
-   ```
-4. Grant the file permission to run (replace with the name of your downloaded file):
-   ```bash
-   chmod +x vpn_configurator_vX.X.X.macos-arm64
-   ```
-5. Run the program:
-   ```bash
-   ./vpn_configurator_vX.X.X.macos-arm64
-   ```
+2. Unpack the archive — it contains `vpn_configurator.app`. **Double-click** it (the graphical interface opens, no terminal window).
+
+   > The app is unsigned, so on first launch macOS may block it. Remove the quarantine flag once from the **Terminal**:
+   >
+   > ```bash
+   > xattr -dr com.apple.quarantine ~/Downloads/vpn_configurator.app
+   > ```
+   >
+   > Or: right-click the `.app` → "Open" → "Open" in the dialog.
+
+> The former interactive terminal (CLI) version of the program is available in older releases — up to [v0.2.3](https://github.com/Friskes/vpn-configurator/releases/tag/v0.2.3) inclusive.
+
+### From source (Python 3.12+)
+
+The project uses [uv](https://docs.astral.sh/uv/) to manage dependencies (install it via `pip install uv` or the [official guide](https://docs.astral.sh/uv/getting-started/installation/)).
+
+```bash
+uv sync              # creates .venv and installs dependencies from uv.lock
+uv run python vpn_configurator.py
+```
 
 ---
 
-### Option 3 — Python script
+## Building the Binary Locally
 
-If you have Python 3.10 or higher installed, you can run the source script directly.
+```bash
+uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
+```
 
-1. Clone or download this repository
-2. Open a terminal in the project folder and run the following commands one by one:
-
-   **Windows:**
-   ```
-   python -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-   python vpn_configurator.py
-   ```
-
-   **macOS / Linux:**
-   ```bash
-   python3 -m venv venv
-   . venv/bin/activate
-   pip3 install -r requirements.txt
-   python3 vpn_configurator.py
-   ```
-
----
-
-## How the Program Works
-
-The program is fully interactive — no command-line arguments or technical knowledge required. After launching, it displays a numbered main menu. You type the number of the action you need, and the program guides you from there: it asks questions one step at a time, hints at what to enter, and reports any errors in plain language. At the end of each scenario it confirms that the file was created successfully and exits.
+The `-w` flag builds without a console window: on Windows it's an `.exe`, on macOS a `dist/vpn_configurator.app` bundle (launches on double-click, no terminal).
 
 ---
 
@@ -140,33 +116,18 @@ The program is fully interactive — no command-line arguments or technical know
 1. Tap the `+` icon on the main screen of the app
 2. Select **"The connection settings file"**
 3. Choose the generated `.conf` file
-4. If the app suggests enabling obfuscation — be sure to agree
+4. If the app suggests enabling obfuscation — agree
 5. Tap **"Connect"**
-
-Done — the profile is created and ready to use!
-
----
 
 ### WireGuard / WireSock (Windows)
 
-Open the WireGuard (or WireSock) app and import the generated `.conf` file via the **"Add tunnel from file"** menu.
-
----
-
-### Nekobox (Android)
-
-1. Go to the **"Configuration"** page in the Nekobox app
-2. Tap the `file+` icon
-3. Select **"Import from file"**
-4. Point to the generated `.json` file
-
-Done — the profile is created and ready to use!
+Import the generated `.conf` file via the **"Add tunnel from file"** menu.
 
 ---
 
 ## Where to Get IP Addresses
 
-Ready-to-use sets are already available in the [`ips/`](https://github.com/Friskes/vpn-configurator/tree/main/ips) folder. If you need additional services, use these resources:
+Ready-to-use sets are already available in the [`ips/`](https://github.com/Friskes/vpn-configurator/tree/main/ips) folder. Additional resources:
 
 - [Various IP address collections (gist)](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
 - [IP addresses in Amnezia format (gist)](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
@@ -185,5 +146,3 @@ Ready-to-use sets are already available in the [`ips/`](https://github.com/Frisk
 - [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN client with obfuscation support for Windows, macOS, Android, iOS
 - [WireSock VPN Client](https://www.wiresock.net/) — WireGuard client for Windows with split tunneling support
 - [WireGuard](https://github.com/WireGuard/wireguard-windows) — official WireGuard client for Windows
-- [Nekobox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — proxy client for Android with VLESS support
-- [Nekobox for Windows / Linux / macOS](https://github.com/MatsuriDayo/nekoray) — desktop proxy client with VLESS support
