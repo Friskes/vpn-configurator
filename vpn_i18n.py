@@ -47,6 +47,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "msg_line_not_kv": "Line {num} does not look like 'Key = value': {line}",
         "msg_missing_allowed_ips": "The [Peer] section has no AllowedIPs key.",
         "msg_invalid_ip_in_key": "Invalid address in {key}: {value}",
+        "msg_invalid_keepalive": "Invalid PersistentKeepalive value: {value}",
         "msg_bad_amnezia_json": "The text is not valid JSON.",
         "gui_invalid_config_title": "Pre-save check",
         "gui_invalid_config_question": (
@@ -73,21 +74,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_client_label": "VPN client:",
         "gui_client_wireguard": "Classic WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (obfuscation + extra filters)",
+        "gui_client_android": "WireGuard for Android (app filter)",
+        "gui_android_settings": "WireGuard for Android settings",
+        "gui_android_warning": (
+            "ExcludedApplications / IncludedApplications are understood only by WireGuard for "
+            "Android and its forks (AmneziaWG, WG Tunnel). Desktop clients reject such a config "
+            "with an 'Invalid key' error.\n"
+            "There is no DisallowedIPs key here, so in the 'tunnel all traffic' mode the VPN "
+            "server address from Endpoint is subtracted from AllowedIPs itself — that is why the "
+            "list turns into a set of ranges instead of a single 0.0.0.0/0."
+        ),
+        "gui_packages_mode_note": (
+            "The app filter has two mutually exclusive modes: a blacklist "
+            "(ExcludedApplications) or a whitelist (IncludedApplications)."
+        ),
+        "gui_apps_mode_excluded": "Exclude these apps from the tunnel (ExcludedApplications)",
+        "gui_apps_mode_included": "Tunnel ONLY these apps (IncludedApplications)",
+        "gui_packages_label": "Android package names:",
+        "gui_hint_packages": (
+            "One package name per line or comma separated, for example com.android.chrome. "
+            "The name is visible in the app's Google Play link, after '?id='."
+        ),
+        "gui_keepalive_label": "PersistentKeepalive, seconds:",
+        "gui_keepalive_tooltip": (
+            "Keeps the NAT mapping alive so the peer can reach the client back;\n"
+            "25 is the value recommended by WireGuard.\n"
+            "The field is prefilled from the source config, and with 25 when the key\n"
+            "is missing or set to 0. An empty field leaves the key untouched."
+        ),
         "gui_wiresock_settings": "WireSock settings",
         "gui_wiresock_priority": (
-            "Filter DisallowedIPs complements AllowedIPs:\nThe app filter has two mutually "
-            "exclusive modes: a blacklist (DisallowedApps) or a whitelist (AllowedApps)."
+            "Filter DisallowedIPs complements AllowedIPs.\n"
+            "In the 'tunnel all traffic' mode the VPN server address from Endpoint is added to "
+            "DisallowedIPs on its own: services hosted on the same server stay reachable directly, "
+            "without a hairpin through the tunnel."
         ),
         "gui_disallowed_ips_label": "Excluded IPs (DisallowedIPs):",
         "gui_apps_label": "Applications:",
+        "gui_apps_mode_note": (
+            "The app filter has two mutually exclusive modes: a blacklist "
+            "(DisallowedApps) or a whitelist (AllowedApps)."
+        ),
         "gui_apps_mode_disallowed": "Exclude these apps from the tunnel (DisallowedApps)",
         "gui_apps_mode_allowed": "Tunnel ONLY these apps (AllowedApps)",
-        "gui_exclude_lan": "Keep RustDesk and the local network outside the tunnel",
+        "gui_exclude_lan": "Keep the local network outside the tunnel",
         "gui_exclude_lan_tooltip": (
-            "Adds to the config:\n"
-            "DisallowedApps = rustdesk — remote access keeps working outside the VPN\n"
-            "(skipped in the whitelist mode);\n"
-            "DisallowedIPs:\n"
+            "Adds to DisallowedIPs:\n"
             "192.168.0.0/16 — home LAN (wider than /24: survives a router subnet change);\n"
             "172.16.0.0/12 — the second private zone (Docker, corporate networks);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"
@@ -172,6 +204,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "msg_line_not_kv": "Строка {num} не похожа на «Ключ = значение»: {line}",
         "msg_missing_allowed_ips": "В секции [Peer] нет ключа AllowedIPs.",
         "msg_invalid_ip_in_key": "Некорректный адрес в {key}: {value}",
+        "msg_invalid_keepalive": "Некорректное значение PersistentKeepalive: {value}",
         "msg_bad_amnezia_json": "Текст не является корректным JSON.",
         "gui_invalid_config_title": "Проверка перед сохранением",
         "gui_invalid_config_question": (
@@ -198,21 +231,51 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_client_label": "VPN-клиент:",
         "gui_client_wireguard": "Классический WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (обфускация + доп. фильтры)",
+        "gui_client_android": "WireGuard для Android (фильтр приложений)",
+        "gui_android_settings": "Параметры WireGuard для Android",
+        "gui_android_warning": (
+            "Ключи ExcludedApplications / IncludedApplications понимает только WireGuard для "
+            "Android и его форки (AmneziaWG, WG Tunnel). Десктопные клиенты откажутся грузить "
+            "такой конфиг с ошибкой «Invalid key».\n"
+            "Ключа DisallowedIPs здесь нет, поэтому в режиме «весь трафик» адрес VPN-сервера из "
+            "Endpoint вычитается прямо из AllowedIPs — из-за этого список превращается в набор "
+            "диапазонов вместо одного 0.0.0.0/0."
+        ),
+        "gui_packages_mode_note": (
+            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
+            "(ExcludedApplications) или белый (IncludedApplications)."
+        ),
+        "gui_apps_mode_excluded": "Исключить эти приложения из туннеля (ExcludedApplications)",
+        "gui_apps_mode_included": "В туннель ТОЛЬКО эти приложения (IncludedApplications)",
+        "gui_packages_label": "Имена Android-пакетов:",
+        "gui_hint_packages": (
+            "По одному имени пакета в строке или через запятую, например com.android.chrome. "
+            "Имя видно в ссылке Google Play на приложение, после «?id=»."
+        ),
+        "gui_keepalive_label": "PersistentKeepalive, секунды:",
+        "gui_keepalive_tooltip": (
+            "Держит NAT-трансляцию живой, чтобы пир мог достучаться до клиента;\n"
+            "25 — рекомендованное WireGuard значение.\n"
+            "Поле заполняется значением из исходного конфига, а если ключа нет\n"
+            "или он равен 0 — числом 25. Пустое поле оставляет ключ как есть."
+        ),
         "gui_wiresock_settings": "Параметры WireSock",
         "gui_wiresock_priority": (
-            "Фильтр DisallowedIPs дополняет AllowedIPs\nФильтр приложений имеет два взаимоисключающих "
-            "режима: чёрный список (DisallowedApps) или белый список (AllowedApps)."
+            "Фильтр DisallowedIPs дополняет AllowedIPs.\n"
+            "В режиме «весь трафик» адрес VPN-сервера из Endpoint добавляется в DisallowedIPs сам: "
+            "сервисы на том же сервере остаются доступны напрямую, без крюка через туннель."
         ),
         "gui_disallowed_ips_label": "Исключённые IP (DisallowedIPs):",
         "gui_apps_label": "Приложения:",
+        "gui_apps_mode_note": (
+            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
+            "(DisallowedApps) или белый список (AllowedApps)."
+        ),
         "gui_apps_mode_disallowed": "Исключить эти приложения из туннеля (DisallowedApps)",
         "gui_apps_mode_allowed": "В туннель ТОЛЬКО эти приложения (AllowedApps)",
-        "gui_exclude_lan": "Не пускать RustDesk и локальную сеть в туннель",
+        "gui_exclude_lan": "Не пускать локальную сеть в туннель",
         "gui_exclude_lan_tooltip": (
-            "Добавляет в конфиг:\n"
-            "DisallowedApps = rustdesk — удалённый доступ продолжит работать мимо VPN\n"
-            "(в режиме белого списка не добавляется);\n"
-            "DisallowedIPs:\n"
+            "Добавляет в DisallowedIPs:\n"
             "192.168.0.0/16 — домашняя LAN (шире /24: переживёт смену подсети роутера);\n"
             "172.16.0.0/12 — вторая приватная зона (Docker, корпоративные сети);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"

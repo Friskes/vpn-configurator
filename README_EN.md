@@ -22,7 +22,12 @@ Based on an existing `.conf` file, creates a new config with IP addresses for sp
 - only the specified IP addresses — taken from address files;
 - or all traffic (`0.0.0.0/0`);
 - **Classic WireGuard** (WireGuard, Amnezia and compatible clients) — a config with no non-standard keys;
-- **WireSock** — adds obfuscation (masks WireGuard traffic from DPI) plus extra filters: excluding IP addresses from the tunnel (`DisallowedIPs`) and an app blacklist or whitelist (`DisallowedApps` / `AllowedApps`). Into the app list you can drop an executable of any OS (`.exe`, a macOS/Linux binary, `.app`) — the file name becomes the app name — or a text file listing app names.
+- **WireSock** — adds obfuscation (masks WireGuard traffic from DPI) plus extra filters: excluding IP addresses from the tunnel (`DisallowedIPs`) and an app blacklist or whitelist (`DisallowedApps` / `AllowedApps`). Into the app list you can drop an executable of any OS (`.exe`, a macOS/Linux binary, `.app`) — the file name becomes the app name — or a text file listing app names;
+- **WireGuard for Android** — an app blacklist or whitelist by Android package name (`ExcludedApplications` / `IncludedApplications`). These two keys are understood only by WireGuard for Android and its forks (AmneziaWG, WG Tunnel) — desktop clients reject such a config with an `Invalid key` error, which is why the mode is a separate option.
+
+In the **"tunnel all traffic"** mode the VPN server address from `Endpoint` is excluded from the tunnel automatically. The point: services hosted on that same server (a panel, your own RustDesk, a proxy) stay reachable directly instead of taking a hairpin through the tunnel. WireSock simply gets the address appended to `DisallowedIPs`; Android has no such key, so `0.0.0.0/0` is replaced with a list of ranges that leaves the server address out. A domain name in `Endpoint` is not resolved — the server address may change, and a one-off resolution baked into the config would become wrong.
+
+For every client there is a **`PersistentKeepalive`** field (in seconds) — it keeps the NAT mapping alive so the server can reach the client back. The field is prefilled from the source config, and with the WireGuard-recommended `25` when the key is missing or set to `0`. You can change the value before generating, and an empty field leaves the key exactly as it was in the source.
 
 **2. Merge / convert IP address files**
 Merges multiple files into one, removing duplicates and invalid addresses. Input files — in any mix, the format is detected automatically, the extension does not matter:
@@ -53,6 +58,7 @@ In the GUI you can drag & drop files straight into the program window, remove th
 | `twitch.txt` | Twitch (1080p + Unblock GeoIP) |
 | `meta.txt` | Meta (Facebook / Instagram / WhatsApp) |
 | `anthropic.txt` | Anthropic / Claude Code |
+| `rutracker.txt` | RuTracker |
 | `all.txt` | All services above merged into a single file |
 
 More sets — in the [Where to get IP addresses](#where-to-get-ip-addresses) section.

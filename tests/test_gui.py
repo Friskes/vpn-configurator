@@ -48,7 +48,7 @@ def drop_event(path):
 
 
 def test_blocks_visibility(app):
-    """Файлы скрываются при «весь трафик», WireSock-рамка — при классическом WireGuard."""
+    """Файлы скрываются при «весь трафик», рамка настроек видна только у своего клиента."""
     assert app.wg_files.winfo_ismapped()
     app.wg_route.set("all")
     app._on_wg_route_change()
@@ -56,28 +56,50 @@ def test_blocks_visibility(app):
     assert not app.wg_files.winfo_ismapped()
 
     assert not app.wiresock_frame.winfo_ismapped()
+    assert not app.android_frame.winfo_ismapped()
+
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app.update()
     assert app.wiresock_frame.winfo_ismapped()
+    assert not app.android_frame.winfo_ismapped()
+
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app.update()
+    assert app.android_frame.winfo_ismapped()
+    assert not app.wiresock_frame.winfo_ismapped()
 
 
-def test_client_choice_is_two_options(app, tmp_path, wg_conf, ips_file):
-    """Классический WireGuard не добавляет WireSock-ключей, WireSock — добавляет."""
+def test_client_choice_switches_extra_keys(app, tmp_path, wg_conf, ips_file):
+    """Каждый клиент добавляет только свои ключи: обфускацию — WireSock, списки пакетов — Android."""
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
+    app.wg_packages.set("com.android.chrome")
 
     app.wg_client.set(vpn_gui.CLIENT_WIREGUARD)
     app._on_wg_client_change()
     app._refresh_preview()
     app.update()
-    assert "ObfuscateKey" not in app.preview_box.get("1.0", "end")
+    preview = app.preview_box.get("1.0", "end")
+    assert "ObfuscateKey" not in preview
+    assert "ExcludedApplications" not in preview
 
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app._refresh_preview()
     app.update()
-    assert "ObfuscateKey" in app.preview_box.get("1.0", "end")
+    preview = app.preview_box.get("1.0", "end")
+    assert "ObfuscateKey" in preview
+    assert "ExcludedApplications" not in preview
+
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "ExcludedApplications = com.android.chrome" in preview
+    assert "ObfuscateKey" not in preview
 
 
 def test_file_list_remove_single(app, tmp_path, ips_file):
@@ -128,17 +150,14 @@ def test_disallowed_ips_holds_paths_not_values(app, tmp_path, wg_conf, ips_file)
 
 
 def test_exclude_lan_checkbox(app, wg_conf, ips_file):
-    """Чекбокс по умолчанию выключен; включение добавляет LAN-диапазоны и rustdesk."""
+    """Чекбокс по умолчанию выключен; включение добавляет LAN-диапазоны, приложения не трогает."""
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
     app._refresh_preview()
     app.update()
-
-    preview = app.preview_box.get("1.0", "end")
-    assert "DisallowedIPs" not in preview
-    assert "rustdesk" not in preview
+    assert "DisallowedIPs" not in app.preview_box.get("1.0", "end")
 
     app.wg_exclude_lan.set(True)
     app._refresh_preview()
@@ -148,12 +167,12 @@ def test_exclude_lan_checkbox(app, wg_conf, ips_file):
         "DisallowedIPs = 192.168.0.0/16, 172.16.0.0/12, 169.254.0.0/16, "
         "224.0.0.0/4, 255.255.255.255/32" in preview
     )
-    assert "DisallowedApps = rustdesk" in preview
+    assert "DisallowedApps" not in preview
     assert "10.0.0.0/8" not in preview
 
 
-def test_exclude_lan_whitelist_mode_keeps_ips_skips_rustdesk(app, tmp_path, wg_conf, ips_file):
-    """Белый список: LAN-диапазоны остаются, rustdesk в DisallowedApps не добавляется."""
+def test_exclude_lan_keeps_ips_in_whitelist_mode(app, tmp_path, wg_conf, ips_file):
+    """Белый список приложений и LAN-исключения независимы: работают одновременно."""
     apps_list = tmp_path / "apps.txt"
     apps_list.write_text("firefox\n", encoding="utf-8")
 
@@ -170,7 +189,6 @@ def test_exclude_lan_whitelist_mode_keeps_ips_skips_rustdesk(app, tmp_path, wg_c
     preview = app.preview_box.get("1.0", "end")
     assert "DisallowedIPs = 192.168.0.0/16" in preview
     assert "AllowedApps = firefox" in preview
-    assert "rustdesk" not in preview
 
 
 def test_bypass_lan_checkbox(app, wg_conf, ips_file):
@@ -189,18 +207,136 @@ def test_bypass_lan_checkbox(app, wg_conf, ips_file):
     assert "BypassLanTraffic = true" in app.preview_box.get("1.0", "end")
 
 
-def test_classic_client_ignores_wiresock_checkboxes(app, wg_conf, ips_file):
-    """Классический WireGuard: включённые чекбоксы WireSock не влияют на конфиг."""
+def test_classic_client_ignores_other_client_settings(app, wg_conf, ips_file):
+    """Классический WireGuard: настройки WireSock и Android не влияют на конфиг."""
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
     app.wg_exclude_lan.set(True)
     app.wg_bypass_lan.set(True)
+    app.wg_packages.set("com.android.chrome")
     app._refresh_preview()
     app.update()
     preview = app.preview_box.get("1.0", "end")
     assert "DisallowedIPs" not in preview
     assert "BypassLanTraffic" not in preview
-    assert "rustdesk" not in preview
+    assert "ExcludedApplications" not in preview
+
+
+def test_android_packages_switch_between_modes(app, wg_conf, ips_file):
+    """Пакеты из поля идут в тот список, который выбран переключателем режима."""
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app.wg_src.set(str(wg_conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app.wg_packages.set("com.android.chrome\norg.telegram.messenger")
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "ExcludedApplications = com.android.chrome, org.telegram.messenger" in preview
+    assert "IncludedApplications" not in preview
+
+    app.wg_package_mode.set(vpn_gui.APP_MODE_INCLUDED)
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "IncludedApplications = com.android.chrome, org.telegram.messenger" in preview
+    assert "ExcludedApplications" not in preview
+
+
+def test_android_endpoint_subtracted_from_allowed_ips(app, tmp_path, ips_file):
+    """На Android исключать адрес сервера нечем, кроме самого AllowedIPs: в режиме «весь трафик»
+    0.0.0.0/0 распадается на диапазоны без адреса сервера, в режиме списка — не трогается."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+        "Endpoint = 185.22.174.53:51820\nAllowedIPs = 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    app.wg_client.set(vpn_gui.CLIENT_ANDROID)
+    app._on_wg_client_change()
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert "AllowedIPs = 8.8.8.8, 1.1.1.0/24" in app.preview_box.get("1.0", "end")
+
+    app.wg_route.set("all")
+    app._on_wg_route_change()
+    app._refresh_preview()
+    app.update()
+    allowed = next(
+        line for line in app.preview_box.get("1.0", "end").splitlines()
+        if line.startswith("AllowedIPs")
+    )
+    assert "0.0.0.0/0" not in allowed
+    assert "185.22.174.53" not in allowed
+    assert "185.22.174.52/32" in allowed
+    assert "185.22.174.54/31" in allowed
+    assert allowed.endswith("::/0")
+
+
+def test_keepalive_seeded_from_source_config(app, tmp_path, wg_conf, ips_file):
+    """Без ключа в исходнике поле показывает 25, с ненулевым ключом — значение из конфига."""
+    app.wg_src.set(str(wg_conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "25"
+    assert "PersistentKeepalive = 25" in app.preview_box.get("1.0", "end")
+
+    custom = tmp_path / "custom.conf"
+    custom.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nPersistentKeepalive = 15\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(custom))
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "15"
+    assert "PersistentKeepalive = 15" in app.preview_box.get("1.0", "end")
+
+
+def test_keepalive_empty_field_keeps_source_value(app, tmp_path, ips_file):
+    """Очищенное поле — осознанный отказ править ключ: нулевое значение исходника остаётся."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nPersistentKeepalive = 0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "25"
+
+    app.wg_keepalive.delete(0, "end")
+    app._refresh_preview()
+    app.update()
+    assert "PersistentKeepalive = 0" in app.preview_box.get("1.0", "end")
+
+
+def test_endpoint_bypassed_only_for_all_traffic(app, tmp_path, ips_file):
+    """Адрес сервера уходит в DisallowedIPs только когда туннелируется весь трафик:
+    в режиме списка адресов туннель его и так не забирает."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+        "Endpoint = 185.22.174.53:51820\nAllowedIPs = 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
+    app._on_wg_client_change()
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert "DisallowedIPs" not in app.preview_box.get("1.0", "end")
+
+    app.wg_route.set("all")
+    app._on_wg_route_change()
+    app._refresh_preview()
+    app.update()
+    assert "DisallowedIPs = 185.22.174.53" in app.preview_box.get("1.0", "end")
 
 
 def test_preview_wheel_scrolls_box_only(app):
@@ -273,7 +409,6 @@ def test_apps_from_binary_and_text_list(app, tmp_path, wg_conf, ips_file):
 
     preview = app.preview_box.get("1.0", "end")
     assert "DisallowedApps = chrome, telegram, my-daemon" in preview
-    assert "rustdesk" not in preview
 
     app.wg_app_mode.set(vpn_gui.APP_MODE_ALLOWED)
     app._refresh_preview()
