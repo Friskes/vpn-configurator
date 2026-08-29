@@ -79,11 +79,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_android_warning": (
             "ExcludedApplications / IncludedApplications are understood only by WireGuard for "
             "Android and its forks (AmneziaWG, WG Tunnel). Desktop clients reject such a config "
-            "with an 'Invalid key' error.\nThe app filter has two mutually exclusive modes: "
-            "a blacklist (ExcludedApplications) or a whitelist (IncludedApplications).\n"
+            "with an 'Invalid key' error.\n"
             "There is no DisallowedIPs key here, so in the 'tunnel all traffic' mode the VPN "
             "server address from Endpoint is subtracted from AllowedIPs itself — that is why the "
             "list turns into a set of ranges instead of a single 0.0.0.0/0."
+        ),
+        "gui_packages_mode_note": (
+            "The app filter has two mutually exclusive modes: a blacklist "
+            "(ExcludedApplications) or a whitelist (IncludedApplications)."
         ),
         "gui_apps_mode_excluded": "Exclude these apps from the tunnel (ExcludedApplications)",
         "gui_apps_mode_included": "Tunnel ONLY these apps (IncludedApplications)",
@@ -101,14 +104,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_wiresock_settings": "WireSock settings",
         "gui_wiresock_priority": (
-            "Filter DisallowedIPs complements AllowedIPs:\nThe app filter has two mutually "
-            "exclusive modes: a blacklist (DisallowedApps) or a whitelist (AllowedApps).\n"
+            "Filter DisallowedIPs complements AllowedIPs.\n"
             "In the 'tunnel all traffic' mode the VPN server address from Endpoint is added to "
             "DisallowedIPs on its own: services hosted on the same server stay reachable directly, "
             "without a hairpin through the tunnel."
         ),
         "gui_disallowed_ips_label": "Excluded IPs (DisallowedIPs):",
         "gui_apps_label": "Applications:",
+        "gui_apps_mode_note": (
+            "The app filter has two mutually exclusive modes: a blacklist "
+            "(DisallowedApps) or a whitelist (AllowedApps)."
+        ),
         "gui_apps_mode_disallowed": "Exclude these apps from the tunnel (DisallowedApps)",
         "gui_apps_mode_allowed": "Tunnel ONLY these apps (AllowedApps)",
         "gui_exclude_lan": "Keep the local network outside the tunnel",
@@ -230,11 +236,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_android_warning": (
             "Ключи ExcludedApplications / IncludedApplications понимает только WireGuard для "
             "Android и его форки (AmneziaWG, WG Tunnel). Десктопные клиенты откажутся грузить "
-            "такой конфиг с ошибкой «Invalid key».\nФильтр приложений имеет два взаимоисключающих "
-            "режима: чёрный список (ExcludedApplications) или белый (IncludedApplications).\n"
+            "такой конфиг с ошибкой «Invalid key».\n"
             "Ключа DisallowedIPs здесь нет, поэтому в режиме «весь трафик» адрес VPN-сервера из "
             "Endpoint вычитается прямо из AllowedIPs — из-за этого список превращается в набор "
             "диапазонов вместо одного 0.0.0.0/0."
+        ),
+        "gui_packages_mode_note": (
+            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
+            "(ExcludedApplications) или белый (IncludedApplications)."
         ),
         "gui_apps_mode_excluded": "Исключить эти приложения из туннеля (ExcludedApplications)",
         "gui_apps_mode_included": "В туннель ТОЛЬКО эти приложения (IncludedApplications)",
@@ -252,13 +261,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_wiresock_settings": "Параметры WireSock",
         "gui_wiresock_priority": (
-            "Фильтр DisallowedIPs дополняет AllowedIPs\nФильтр приложений имеет два взаимоисключающих "
-            "режима: чёрный список (DisallowedApps) или белый список (AllowedApps).\n"
+            "Фильтр DisallowedIPs дополняет AllowedIPs.\n"
             "В режиме «весь трафик» адрес VPN-сервера из Endpoint добавляется в DisallowedIPs сам: "
             "сервисы на том же сервере остаются доступны напрямую, без крюка через туннель."
         ),
         "gui_disallowed_ips_label": "Исключённые IP (DisallowedIPs):",
         "gui_apps_label": "Приложения:",
+        "gui_apps_mode_note": (
+            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
+            "(DisallowedApps) или белый список (AllowedApps)."
+        ),
         "gui_apps_mode_disallowed": "Исключить эти приложения из туннеля (DisallowedApps)",
         "gui_apps_mode_allowed": "В туннель ТОЛЬКО эти приложения (AllowedApps)",
         "gui_exclude_lan": "Не пускать локальную сеть в туннель",

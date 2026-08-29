@@ -697,16 +697,13 @@ class VpnConfiguratorApp(ctk.CTk):
         self._file_lists.append(self.wg_disallowed_ips)
 
         self.wg_app_mode = ctk.StringVar(value=APP_MODE_DISALLOWED)
-        app_mode_frame = ctk.CTkFrame(self.wiresock_frame, fg_color="transparent")
-        app_mode_frame.grid(row=5, column=0, sticky="w", padx=12, pady=(6, 0))
-        for row, (value, key) in enumerate(
-            [(APP_MODE_DISALLOWED, "gui_apps_mode_disallowed"), (APP_MODE_ALLOWED, "gui_apps_mode_allowed")]
-        ):
-            radio = ctk.CTkRadioButton(
-                app_mode_frame, variable=self.wg_app_mode, value=value, command=self.schedule_preview
-            )
-            radio.grid(row=row, column=0, sticky="w", pady=2)
-            self.register_i18n(radio, key)
+        self._build_mode_radios(
+            self.wiresock_frame,
+            5,
+            self.wg_app_mode,
+            "gui_apps_mode_note",
+            [(APP_MODE_DISALLOWED, "gui_apps_mode_disallowed"), (APP_MODE_ALLOWED, "gui_apps_mode_allowed")],
+        )
 
         self.wg_apps = FileListPicker(
             self.wiresock_frame, self, "gui_apps_label", "gui_hint_app_files", self._app_filetypes
@@ -719,19 +716,13 @@ class VpnConfiguratorApp(ctk.CTk):
         )
 
         self.wg_package_mode = ctk.StringVar(value=APP_MODE_EXCLUDED)
-        package_mode_frame = ctk.CTkFrame(self.android_frame, fg_color="transparent")
-        package_mode_frame.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 0))
-        for row, (value, key) in enumerate(
-            [(APP_MODE_EXCLUDED, "gui_apps_mode_excluded"), (APP_MODE_INCLUDED, "gui_apps_mode_included")]
-        ):
-            radio = ctk.CTkRadioButton(
-                package_mode_frame,
-                variable=self.wg_package_mode,
-                value=value,
-                command=self.schedule_preview,
-            )
-            radio.grid(row=row, column=0, sticky="w", pady=2)
-            self.register_i18n(radio, key)
+        self._build_mode_radios(
+            self.android_frame,
+            2,
+            self.wg_package_mode,
+            "gui_packages_mode_note",
+            [(APP_MODE_EXCLUDED, "gui_apps_mode_excluded"), (APP_MODE_INCLUDED, "gui_apps_mode_included")],
+        )
 
         self.wg_packages = TextListBox(
             self.android_frame, self, "gui_packages_label", "gui_hint_packages"
@@ -791,6 +782,37 @@ class VpnConfiguratorApp(ctk.CTk):
         note.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
         self.register_i18n(note, note_key)
         return frame
+
+    def _build_mode_radios(
+        self,
+        parent: ctk.CTkFrame,
+        row: int,
+        variable: ctk.StringVar,
+        note_key: str,
+        items: list[tuple[str, str]],
+    ) -> None:
+        """Переключатель взаимоисключающих режимов вместе с пояснением к нему: текст стоит
+        вплотную к своим радиокнопкам, а не в общей шапке рамки клиента."""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=row, column=0, sticky="w", padx=12, pady=(6, 0))
+
+        note = ctk.CTkLabel(
+            frame,
+            anchor="w",
+            justify="left",
+            wraplength=600,
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+        )
+        note.grid(row=0, column=0, sticky="w", pady=(0, 2))
+        self.register_i18n(note, note_key)
+
+        for index, (value, key) in enumerate(items, start=1):
+            radio = ctk.CTkRadioButton(
+                frame, variable=variable, value=value, command=self.schedule_preview
+            )
+            radio.grid(row=index, column=0, sticky="w", pady=2)
+            self.register_i18n(radio, key)
 
     def _conf_open_options(self) -> dict:
         return {"filetypes": [(tr("gui_filetype_conf"), "*.conf"), (tr("gui_filetype_all"), "*.*")]}
