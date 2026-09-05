@@ -514,6 +514,31 @@ class TestBypassEndpoint:
         assert core.read_endpoint_ip(tmp_path / "nope.conf") is None
 
 
+class TestReadAllowedIps:
+    def _conf(self, tmp_path, allowed_ips):
+        conf = tmp_path / "other.conf"
+        conf.write_text(
+            f"[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nAllowedIPs = {allowed_ips}\n",
+            encoding="utf-8",
+        )
+        return conf
+
+    def test_catch_all_dropped(self, tmp_path):
+        conf = self._conf(tmp_path, "10.100.0.0/22, 172.31.19.191/32, 0.0.0.0/0, ::/0")
+        assert core.read_allowed_ips(conf) == ["10.100.0.0/22", "172.31.19.191/32"]
+
+    def test_only_catch_all_gives_empty(self, tmp_path):
+        assert core.read_allowed_ips(self._conf(tmp_path, "0.0.0.0/0, ::/0")) == []
+
+    def test_missing_file_gives_empty(self, tmp_path):
+        assert core.read_allowed_ips(tmp_path / "nope.conf") == []
+
+    def test_no_peer_section_gives_empty(self, tmp_path):
+        conf = tmp_path / "broken.conf"
+        conf.write_text("[Interface]\nPrivateKey = abc\n", encoding="utf-8")
+        assert core.read_allowed_ips(conf) == []
+
+
 class TestExcludeIps:
     def test_single_host_removed_from_default_route(self):
         result = core.exclude_ips(["0.0.0.0/0"], ["185.22.174.53"])

@@ -23,6 +23,7 @@ from vpn_configurator import (
     exclude_ips,
     merge_unique,
     parse_app_names,
+    read_allowed_ips,
     read_endpoint_ip,
     read_persistent_keepalive,
     validate_amnezia_text,
@@ -638,7 +639,12 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_route = ctk.StringVar(value="listed")
         route_frame = ctk.CTkFrame(page, fg_color="transparent")
         route_frame.grid(row=3, column=0, sticky="w", pady=(4, 2))
-        for row, (value, key) in enumerate([("listed", "gui_route_listed"), ("all", "gui_route_all")]):
+        route_keys = [
+            ("listed", "gui_route_listed"),
+            ("all", "gui_route_all"),
+            ("keep", "gui_route_keep"),
+        ]
+        for row, (value, key) in enumerate(route_keys):
             radio = ctk.CTkRadioButton(
                 route_frame, variable=self.wg_route, value=value, command=self._on_wg_route_change
             )
@@ -696,10 +702,18 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_disallowed_ips.grid(row=4, column=0, sticky="ew", padx=12, pady=(4, 2))
         self._file_lists.append(self.wg_disallowed_ips)
 
+        self.wg_cut_ips = ctk.BooleanVar(value=False)
+        cut_ips_box = ctk.CTkCheckBox(
+            self.wiresock_frame, variable=self.wg_cut_ips, command=self.schedule_preview
+        )
+        cut_ips_box.grid(row=5, column=0, sticky="w", padx=12, pady=(2, 0))
+        self.register_i18n(cut_ips_box, "gui_cut_ips")
+        Tooltip(cut_ips_box, "gui_cut_ips_tooltip")
+
         self.wg_app_mode = ctk.StringVar(value=APP_MODE_DISALLOWED)
         self._build_mode_radios(
             self.wiresock_frame,
-            5,
+            6,
             self.wg_app_mode,
             "gui_apps_mode_note",
             [(APP_MODE_DISALLOWED, "gui_apps_mode_disallowed"), (APP_MODE_ALLOWED, "gui_apps_mode_allowed")],
@@ -708,7 +722,7 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_apps = FileListPicker(
             self.wiresock_frame, self, "gui_apps_label", "gui_hint_app_files", self._app_filetypes
         )
-        self.wg_apps.grid(row=6, column=0, sticky="ew", padx=12, pady=(4, 10))
+        self.wg_apps.grid(row=7, column=0, sticky="ew", padx=12, pady=(4, 10))
         self._file_lists.append(self.wg_apps)
 
         self.android_frame = self._build_client_frame(
@@ -729,8 +743,13 @@ class VpnConfiguratorApp(ctk.CTk):
         )
         self.wg_packages.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 10))
 
+        self.wg_neighbour_conf = FilePickerRow(
+            page, self, "gui_neighbour_conf", "open", self._conf_open_options
+        )
+        self.wg_neighbour_conf.grid(row=8, column=0, sticky="ew", pady=3)
+
         keepalive_frame = ctk.CTkFrame(page, fg_color="transparent")
-        keepalive_frame.grid(row=8, column=0, sticky="w", pady=(6, 0))
+        keepalive_frame.grid(row=9, column=0, sticky="w", pady=(6, 0))
         keepalive_label = ctk.CTkLabel(keepalive_frame)
         keepalive_label.grid(row=0, column=0, padx=(0, 10))
         self.register_i18n(keepalive_label, "gui_keepalive_label")
@@ -745,9 +764,9 @@ class VpnConfiguratorApp(ctk.CTk):
         self.wg_dst = FilePickerRow(
             page, self, "gui_new_conf", "save", self._wg_save_options, dnd=False
         )
-        self.wg_dst.grid(row=9, column=0, sticky="ew", pady=3)
+        self.wg_dst.grid(row=10, column=0, sticky="ew", pady=3)
 
-        self._create_run_button(page, 10, "gui_run_wg", self._run_wireguard)
+        self._create_run_button(page, 11, "gui_run_wg", self._run_wireguard)
 
         self._on_wg_route_change()
         self._on_wg_client_change()
@@ -840,6 +859,10 @@ class VpnConfiguratorApp(ctk.CTk):
                 frame.grid()
             else:
                 frame.grid_remove()
+        if client == CLIENT_WIREGUARD:
+            self.wg_neighbour_conf.grid_remove()
+        else:
+            self.wg_neighbour_conf.grid()
         self.schedule_preview()
 
     def _wg_client_kwargs(self) -> dict:
@@ -849,11 +872,11 @@ class VpnConfiguratorApp(ctk.CTk):
         client = self.wg_client.get()
 
         if client == CLIENT_WIRESOCK:
-            disallowed_ips = list(LAN_EXCLUDE_IPS) if self.wg_exclude_lan.get() else []
-            if self.wg_disallowed_ips.paths:
-                disallowed_ips = merge_unique(
-                    disallowed_ips, self._collect_ips_cached(self.wg_disallowed_ips.paths)
-                )
+            disallowed_ips = (
+                self._collect_ips_cached(self.wg_disallowed_ips.paths)
+                if self.wg_disallowed_ips.paths and not self.wg_cut_ips.get()
+                else []
+            )
             apps = collect_app_names(self.wg_apps.paths) if self.wg_apps.paths else []
             allowed_mode = self.wg_app_mode.get() == APP_MODE_ALLOWED
             kwargs.update(
@@ -873,10 +896,25 @@ class VpnConfiguratorApp(ctk.CTk):
         return kwargs
 
     def _allowed_ips_for_client(self, ips: list[str], source: str) -> list[str]:
-        """У WireGuard под Android нет ключа исключений, поэтому в режиме «весь трафик»
-        адрес сервера вычитается прямо из AllowedIPs — иначе трафик к сервисам на том же
-        сервере уходил бы в туннель и возвращался на него же."""
-        if self.wg_client.get() != CLIENT_ANDROID or self.wg_route.get() != "all":
+        """Исключения, выразимые только самим списком AllowedIPs, — такой конфиг без правок
+        понимают Amnezia и другие клиенты без ключа DisallowedIPs. Для классического WireGuard
+        список не дробится: killswitch работает только при ровно 0.0.0.0/0."""
+        client = self.wg_client.get()
+        if client == CLIENT_WIRESOCK:
+            if self.wg_exclude_lan.get():
+                ips = exclude_ips(ips, LAN_EXCLUDE_IPS)
+            if self.wg_cut_ips.get() and self.wg_disallowed_ips.paths:
+                ips = exclude_ips(ips, self._collect_ips_cached(self.wg_disallowed_ips.paths))
+        if client != CLIENT_WIREGUARD:
+            neighbour = self.wg_neighbour_conf.get()
+            if neighbour:
+                holes = read_allowed_ips(neighbour)
+                endpoint = read_endpoint_ip(neighbour)
+                if endpoint:
+                    holes = merge_unique(holes, [endpoint])
+                if holes:
+                    ips = exclude_ips(ips, holes)
+        if client != CLIENT_ANDROID or self.wg_route.get() != "all":
             return ips
         endpoint = read_endpoint_ip(source)
         return exclude_ips(ips, [endpoint]) if endpoint else ips
@@ -934,6 +972,9 @@ class VpnConfiguratorApp(ctk.CTk):
         self._sync_keepalive_field(src)
         if self.wg_route.get() == "all":
             ips = list(ALL_TRAFFIC_IPS)
+        elif self.wg_route.get() == "keep":
+            ips = read_allowed_ips(src)
+            self._require(ips, "gui_err_no_keep_ips")
         else:
             self._require(self.wg_files.paths, "gui_err_need_files")
             ips = self._collect_ips_cached(self.wg_files.paths)

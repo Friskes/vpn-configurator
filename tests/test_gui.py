@@ -129,8 +129,8 @@ def test_file_list_rows_have_remove_buttons(app, ips_file):
 
 
 def test_disallowed_ips_holds_paths_not_values(app, tmp_path, wg_conf, ips_file):
-    """DisallowedIPs показывает пути файлов; адреса из них видны в предпросмотре
-    и дополняют LAN-диапазоны чекбокса, а не заменяют их."""
+    """DisallowedIPs показывает пути файлов; адреса из них видны в предпросмотре,
+    а LAN-чекбокс этот ключ больше не пополняет."""
     local = tmp_path / "local.txt"
     local.write_text("100.64.0.0/10\n", encoding="utf-8")
 
@@ -145,41 +145,45 @@ def test_disallowed_ips_holds_paths_not_values(app, tmp_path, wg_conf, ips_file)
     app._refresh_preview()
     app.update()
     preview = app.preview_box.get("1.0", "end")
-    assert "192.168.0.0/16" in preview
-    assert "100.64.0.0/10" in preview
+    assert "DisallowedIPs = 100.64.0.0/10" in preview
+    assert "192.168.0.0/16" not in preview
 
 
-def test_exclude_lan_checkbox(app, wg_conf, ips_file):
-    """Чекбокс по умолчанию выключен; включение добавляет LAN-диапазоны, приложения не трогает."""
+def test_exclude_lan_checkbox(app, tmp_path, wg_conf):
+    """Чекбокс по умолчанию выключен; включение вырезает LAN-диапазоны из самого AllowedIPs
+    вместо записи DisallowedIPs — конфиг остаётся совместимым с Amnezia."""
+    mixed = tmp_path / "mixed.txt"
+    mixed.write_text("8.8.8.8, 192.168.50.0/24\n", encoding="utf-8")
+
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app.wg_src.set(str(wg_conf))
-    app.wg_files.add_paths([str(ips_file)])
+    app.wg_files.add_paths([str(mixed)])
     app._refresh_preview()
     app.update()
-    assert "DisallowedIPs" not in app.preview_box.get("1.0", "end")
+    assert "192.168.50.0/24" in app.preview_box.get("1.0", "end")
 
     app.wg_exclude_lan.set(True)
     app._refresh_preview()
     app.update()
     preview = app.preview_box.get("1.0", "end")
-    assert (
-        "DisallowedIPs = 192.168.0.0/16, 172.16.0.0/12, 169.254.0.0/16, "
-        "224.0.0.0/4, 255.255.255.255/32" in preview
-    )
+    assert "8.8.8.8" in preview
+    assert "192.168.50.0/24" not in preview
+    assert "DisallowedIPs" not in preview
     assert "DisallowedApps" not in preview
-    assert "10.0.0.0/8" not in preview
 
 
-def test_exclude_lan_keeps_ips_in_whitelist_mode(app, tmp_path, wg_conf, ips_file):
+def test_exclude_lan_keeps_ips_in_whitelist_mode(app, tmp_path, wg_conf):
     """Белый список приложений и LAN-исключения независимы: работают одновременно."""
     apps_list = tmp_path / "apps.txt"
     apps_list.write_text("firefox\n", encoding="utf-8")
+    mixed = tmp_path / "mixed.txt"
+    mixed.write_text("8.8.8.8, 192.168.50.0/24\n", encoding="utf-8")
 
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
     app._on_wg_client_change()
     app.wg_src.set(str(wg_conf))
-    app.wg_files.add_paths([str(ips_file)])
+    app.wg_files.add_paths([str(mixed)])
     app.wg_exclude_lan.set(True)
     app.wg_app_mode.set(vpn_gui.APP_MODE_ALLOWED)
     app.wg_apps.add_paths([str(apps_list)])
@@ -187,7 +191,7 @@ def test_exclude_lan_keeps_ips_in_whitelist_mode(app, tmp_path, wg_conf, ips_fil
     app.update()
 
     preview = app.preview_box.get("1.0", "end")
-    assert "DisallowedIPs = 192.168.0.0/16" in preview
+    assert "192.168.50.0/24" not in preview
     assert "AllowedApps = firefox" in preview
 
 
@@ -220,6 +224,82 @@ def test_classic_client_ignores_other_client_settings(app, wg_conf, ips_file):
     assert "DisallowedIPs" not in preview
     assert "BypassLanTraffic" not in preview
     assert "ExcludedApplications" not in preview
+
+
+def _neighbour_conf(tmp_path):
+    conf = tmp_path / "neighbour.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+        "Endpoint = 5.5.5.5:51820\nAllowedIPs = 10.100.0.0/22, 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    return conf
+
+
+def test_route_keep_takes_source_subnets(app, tmp_path):
+    """Режим «оставить адреса исходника»: конкретные подсети сохраняются, 0.0.0.0/0 отбрасывается."""
+    src = tmp_path / "corp.conf"
+    src.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+        "AllowedIPs = 10.100.0.0/22, 172.31.19.191/32, 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(src))
+    app.wg_route.set("keep")
+    app._on_wg_route_change()
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "AllowedIPs = 10.100.0.0/22, 172.31.19.191/32" in preview
+    assert "0.0.0.0/0" not in preview
+
+
+def test_neighbour_conf_subtracted(app, tmp_path, wg_conf):
+    """Подсети и Endpoint соседнего VPN вычитаются из AllowedIPs генерируемого конфига."""
+    app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
+    app._on_wg_client_change()
+    app.wg_src.set(str(wg_conf))
+    app.wg_route.set("all")
+    app._on_wg_route_change()
+    app.wg_neighbour_conf.set(str(_neighbour_conf(tmp_path)))
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "10.100.4.0/22" in preview
+    assert "10.100.0.0/22" not in preview
+    assert "5.5.5.4/32" in preview
+
+
+def test_neighbour_conf_ignored_for_classic_client(app, tmp_path, wg_conf):
+    """Классический WireGuard: AllowedIPs не дробится даже с указанным соседним конфигом
+    (killswitch требует ровно 0.0.0.0/0)."""
+    app.wg_src.set(str(wg_conf))
+    app.wg_route.set("all")
+    app._on_wg_route_change()
+    app.wg_neighbour_conf.set(str(_neighbour_conf(tmp_path)))
+    app._refresh_preview()
+    app.update()
+    assert "AllowedIPs = 0.0.0.0/0" in app.preview_box.get("1.0", "end")
+
+
+def test_cut_ips_mode_carves_allowed_ips(app, tmp_path, wg_conf):
+    """Режим вырезания: ручной список исключений уходит из AllowedIPs, ключ DisallowedIPs не пишется."""
+    reserve = tmp_path / "reserve.txt"
+    reserve.write_text("10.0.0.0/8\n", encoding="utf-8")
+
+    app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
+    app._on_wg_client_change()
+    app.wg_src.set(str(wg_conf))
+    app.wg_route.set("all")
+    app._on_wg_route_change()
+    app.wg_disallowed_ips.add_paths([str(reserve)])
+    app.wg_cut_ips.set(True)
+    app._refresh_preview()
+    app.update()
+    preview = app.preview_box.get("1.0", "end")
+    assert "11.0.0.0/8" in preview
+    assert "10.0.0.0/8" not in preview
+    assert "DisallowedIPs" not in preview
 
 
 def test_android_packages_switch_between_modes(app, wg_conf, ips_file):

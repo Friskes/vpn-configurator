@@ -71,6 +71,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_new_conf": "New .conf file:",
         "gui_route_listed": "Tunnel only the listed IP addresses",
         "gui_route_all": "Tunnel all traffic (0.0.0.0/0)",
+        "gui_route_keep": "Keep the addresses from the source config, drop 0.0.0.0/0",
         "gui_client_label": "VPN client:",
         "gui_client_wireguard": "Classic WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (obfuscation + extra filters)",
@@ -110,6 +111,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "without a hairpin through the tunnel."
         ),
         "gui_disallowed_ips_label": "Excluded IPs (DisallowedIPs):",
+        "gui_cut_ips": "Cut these addresses out of AllowedIPs instead of the DisallowedIPs key",
+        "gui_cut_ips_tooltip": (
+            "The listed addresses are subtracted from AllowedIPs itself, so the exclusion "
+            "also works in clients without DisallowedIPs support (Amnezia and others).\n"
+            "Handy for wide reserves like 10.0.0.0/8 when another VPN owns part of that space."
+        ),
+        "gui_neighbour_conf": (
+            "Config of another VPN running side by side (its server and subnets are excluded):"
+        ),
         "gui_apps_label": "Applications:",
         "gui_apps_mode_note": (
             "The app filter has two mutually exclusive modes: a blacklist "
@@ -119,7 +129,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_apps_mode_allowed": "Tunnel ONLY these apps (AllowedApps)",
         "gui_exclude_lan": "Keep the local network outside the tunnel",
         "gui_exclude_lan_tooltip": (
-            "Adds to DisallowedIPs:\n"
+            "Cuts these ranges out of AllowedIPs itself, so the same config also works "
+            "in clients without DisallowedIPs support (Amnezia and others):\n"
             "192.168.0.0/16 — home LAN (wider than /24: survives a router subnet change);\n"
             "172.16.0.0/12 — the second private zone (Docker, corporate networks);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"
@@ -173,6 +184,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_theme_dark": "Dark",
         "gui_err_need_conf": "Select the existing .conf file.",
         "gui_err_need_files": "Add at least one file with IP addresses.",
+        "gui_err_no_keep_ips": (
+            "The source config has no specific addresses in AllowedIPs — only 0.0.0.0/0."
+        ),
         "gui_err_need_output": "Specify the output file name.",
         "gui_overwrite_title": "File exists",
         "gui_overwrite_question": "The file already exists:\n{path}\n\nOverwrite it?",
@@ -228,6 +242,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_new_conf": "Новый .conf файл:",
         "gui_route_listed": "Туннелировать только указанные IP-адреса",
         "gui_route_all": "Туннелировать весь трафик (0.0.0.0/0)",
+        "gui_route_keep": "Оставить адреса из исходного конфига, убрав 0.0.0.0/0",
         "gui_client_label": "VPN-клиент:",
         "gui_client_wireguard": "Классический WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (обфускация + доп. фильтры)",
@@ -266,6 +281,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "сервисы на том же сервере остаются доступны напрямую, без крюка через туннель."
         ),
         "gui_disallowed_ips_label": "Исключённые IP (DisallowedIPs):",
+        "gui_cut_ips": "Вырезать эти адреса из AllowedIPs вместо ключа DisallowedIPs",
+        "gui_cut_ips_tooltip": (
+            "Указанные адреса вычитаются из самого AllowedIPs, поэтому исключение работает "
+            "и в клиентах без поддержки DisallowedIPs (Amnezia и другие).\n"
+            "Удобно для широких резервов вроде 10.0.0.0/8, когда часть этой зоны занята другим VPN."
+        ),
+        "gui_neighbour_conf": (
+            "Конфиг другого VPN, работающего параллельно (его сервер и подсети будут исключены):"
+        ),
         "gui_apps_label": "Приложения:",
         "gui_apps_mode_note": (
             "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
@@ -275,7 +299,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_apps_mode_allowed": "В туннель ТОЛЬКО эти приложения (AllowedApps)",
         "gui_exclude_lan": "Не пускать локальную сеть в туннель",
         "gui_exclude_lan_tooltip": (
-            "Добавляет в DisallowedIPs:\n"
+            "Вырезает эти диапазоны из самого AllowedIPs, поэтому тот же конфиг работает "
+            "и в клиентах без поддержки DisallowedIPs (Amnezia и другие):\n"
             "192.168.0.0/16 — домашняя LAN (шире /24: переживёт смену подсети роутера);\n"
             "172.16.0.0/12 — вторая приватная зона (Docker, корпоративные сети);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"
@@ -331,6 +356,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_theme_dark": "Тёмная",
         "gui_err_need_conf": "Укажите существующий .conf файл.",
         "gui_err_need_files": "Добавьте хотя бы один файл с IP-адресами.",
+        "gui_err_no_keep_ips": (
+            "В исходном конфиге нет конкретных адресов в AllowedIPs — только 0.0.0.0/0."
+        ),
         "gui_err_need_output": "Укажите имя итогового файла.",
         "gui_overwrite_title": "Файл существует",
         "gui_overwrite_question": "Файл уже существует:\n{path}\n\nПерезаписать его?",
