@@ -12,6 +12,12 @@
 
 ![How Split Tunneling Works](images/How-Split-Tunneling-Works.jpg)
 
+> [!TIP]
+> **This is the client side. The server side is [vpn-infra](https://github.com/Friskes/vpn-infra).**
+> It deploys a personal VPN on a plain VPS with one command: WireGuard, VLESS + Reality,
+> two DNS tunnels and RustDesk, each service its own switch. That is where the `.conf`
+> comes from — the one this tool turns into a split-tunneling config.
+
 ---
 
 ## Features
@@ -163,7 +169,7 @@ Ready-to-use sets are already available in the [`AllowedIPs/`](https://github.co
 
 ## Useful Links
 
-- [vpn-infra](https://github.com/Friskes/vpn-infra) — the author's repository for deploying a self-hosted VPN server
+- [vpn-infra](https://github.com/Friskes/vpn-infra) — the server side of the same pair: a personal VPN server on a plain VPS with one command
 - [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN client with obfuscation support for Windows, macOS, Android, iOS
 - [WireSock VPN Client](https://www.wiresock.net/) — WireGuard client for Windows with split tunneling support
 - [WireGuard](https://github.com/WireGuard/wireguard-windows) — official WireGuard client for Windows

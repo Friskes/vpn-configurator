@@ -12,6 +12,12 @@
 
 ![How Split Tunneling Works](images/How-Split-Tunneling-Works.jpg)
 
+> [!TIP]
+> **Здесь только клиентская часть. Серверная — [vpn-infra](https://github.com/Friskes/vpn-infra).**
+> Разворачивает личный VPN на чистом VPS одной командой: WireGuard, VLESS + Reality,
+> два DNS-туннеля и RustDesk, каждый сервис отдельным выключателем. Оттуда и берётся
+> тот `.conf`, из которого эта программа делает конфиг с раздельным туннелированием.
+
 ---
 
 ## Возможности
@@ -163,7 +169,7 @@ uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 v
 
 ## Полезные ссылки
 
-- [vpn-infra](https://github.com/Friskes/vpn-infra) — репозиторий автора для развёртывания собственного (self-hosted) VPN-сервера
+- [vpn-infra](https://github.com/Friskes/vpn-infra) — серверная часть этого же набора: личный VPN-сервер на чистом VPS одной командой
 - [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN-клиент с поддержкой обфускации для Windows, macOS, Android, iOS
 - [WireSock VPN Client](https://www.wiresock.net/) — WireGuard-клиент для Windows с поддержкой раздельного туннелирования
 - [WireGuard](https://github.com/WireGuard/wireguard-windows) — официальный клиент WireGuard для Windows
