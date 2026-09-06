@@ -43,9 +43,11 @@
 
 В GUI файлы можно перетаскивать мышью (drag & drop) прямо в окно программы, убирать по одному кнопкой напротив каждого, а результат показывается в редактируемом предпросмотре с подсветкой синтаксиса — текст можно поправить руками перед сохранением.
 
+![Интерфейс VPN Configurator](images/vpn_configurator_ru.png)
+
 ---
 
-### Готовые наборы IP-адресов в папке `ips/`
+### Готовые наборы IP-адресов в папке `AllowedIPs/`
 
 | Файл | Сервис |
 |---|---|
@@ -65,6 +67,15 @@
 | `all.txt` | Все сервисы из списка выше объединены в один файл |
 
 Дополнительные наборы — в разделе [Где взять IP-адреса](#где-взять-ip-адреса).
+
+### Готовые списки приложений
+
+| Папка | Назначение |
+|---|---|
+| `DisallowedApps/` | Имена приложений для фильтра WireSock (`DisallowedApps` / `AllowedApps`) |
+| `ExcludedApplications/` | Имена Android-пакетов для WireGuard для Android (`ExcludedApplications` / `IncludedApplications`) |
+
+В обеих папках `all.txt` — общий список; сейчас в нём RustDesk.
 
 ---
 
@@ -136,7 +147,7 @@ uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 v
 
 ## Где взять IP-адреса
 
-Готовые наборы уже есть в папке [`ips/`](https://github.com/Friskes/vpn-configurator/tree/main/ips). Дополнительные ресурсы:
+Готовые наборы уже есть в папке [`AllowedIPs/`](https://github.com/Friskes/vpn-configurator/tree/main/AllowedIPs). Дополнительные ресурсы:
 
 - [Разные коллекции IP-адресов (gist)](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
 - [IP-адреса в формате Amnezia (gist)](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
@@ -152,6 +163,13 @@ uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 v
 
 ## Полезные ссылки
 
+- [vpn-infra](https://github.com/Friskes/vpn-infra) — репозиторий автора для развёртывания собственного (self-hosted) VPN-сервера
 - [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN-клиент с поддержкой обфускации для Windows, macOS, Android, iOS
 - [WireSock VPN Client](https://www.wiresock.net/) — WireGuard-клиент для Windows с поддержкой раздельного туннелирования
 - [WireGuard](https://github.com/WireGuard/wireguard-windows) — официальный клиент WireGuard для Windows
+
+---
+
+## Лицензия
+
+Проект распространяется по лицензии [MIT](LICENSE).

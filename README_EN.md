@@ -21,9 +21,12 @@ Based on an existing `.conf` file, creates a new config with IP addresses for sp
 
 - only the specified IP addresses — taken from address files;
 - or all traffic (`0.0.0.0/0`);
+- or the addresses already present in the source config with the `0.0.0.0/0` dropped — handy when the issued config lists the needed subnets but ends with a catch-all tail and therefore pulls all traffic;
 - **Classic WireGuard** (WireGuard, Amnezia and compatible clients) — a config with no non-standard keys;
 - **WireSock** — adds obfuscation (masks WireGuard traffic from DPI) plus extra filters: excluding IP addresses from the tunnel (`DisallowedIPs`) and an app blacklist or whitelist (`DisallowedApps` / `AllowedApps`). Into the app list you can drop an executable of any OS (`.exe`, a macOS/Linux binary, `.app`) — the file name becomes the app name — or a text file listing app names;
 - **WireGuard for Android** — an app blacklist or whitelist by Android package name (`ExcludedApplications` / `IncludedApplications`). These two keys are understood only by WireGuard for Android and its forks (AmneziaWG, WG Tunnel) — desktop clients reject such a config with an `Invalid key` error, which is why the mode is a separate option.
+
+**Two VPNs side by side.** If a second tunnel runs in parallel (e.g. a corporate one), point the app at its `.conf` — its server address and its specific subnets get subtracted from the generated config's `AllowedIPs`. Without that, the second VPN's packets get wrapped inside the first tunnel (the double wrapping doesn't fit the MTU — websites work intermittently) and its subnets get hijacked. LAN exclusions and manual exclusion lists can be carved directly out of `AllowedIPs` — such a config is understood by any client, including Amnezia, which has no `DisallowedIPs` key.
 
 In the **"tunnel all traffic"** mode the VPN server address from `Endpoint` is excluded from the tunnel automatically. The point: services hosted on that same server (a panel, your own RustDesk, a proxy) stay reachable directly instead of taking a hairpin through the tunnel. WireSock simply gets the address appended to `DisallowedIPs`; Android has no such key, so `0.0.0.0/0` is replaced with a list of ranges that leaves the server address out. A domain name in `Endpoint` is not resolved — the server address may change, and a one-off resolution baked into the config would become wrong.
 
@@ -40,9 +43,11 @@ Output format of your choice: plaintext `.txt`, Amnezia `.json`, or Windows `rou
 
 In the GUI you can drag & drop files straight into the program window, remove them one by one with the button next to each, and the result is shown in an editable preview with syntax highlighting — you can tweak the text by hand before saving.
 
+![VPN Configurator interface](images/vpn_configurator_en.png)
+
 ---
 
-### Ready-to-use IP address sets in the `ips/` folder
+### Ready-to-use IP address sets in the `AllowedIPs/` folder
 
 | File | Service |
 |---|---|
@@ -62,6 +67,15 @@ In the GUI you can drag & drop files straight into the program window, remove th
 | `all.txt` | All services above merged into a single file |
 
 More sets — in the [Where to get IP addresses](#where-to-get-ip-addresses) section.
+
+### Ready-to-use app lists
+
+| Folder | Purpose |
+|---|---|
+| `DisallowedApps/` | App names for the WireSock filter (`DisallowedApps` / `AllowedApps`) |
+| `ExcludedApplications/` | Android package names for WireGuard for Android (`ExcludedApplications` / `IncludedApplications`) |
+
+Each folder has an `all.txt` — the combined list; currently it contains RustDesk.
 
 ---
 
@@ -133,7 +147,7 @@ Import the generated `.conf` file via the **"Add tunnel from file"** menu.
 
 ## Where to Get IP Addresses
 
-Ready-to-use sets are already available in the [`ips/`](https://github.com/Friskes/vpn-configurator/tree/main/ips) folder. Additional resources:
+Ready-to-use sets are already available in the [`AllowedIPs/`](https://github.com/Friskes/vpn-configurator/tree/main/AllowedIPs) folder. Additional resources:
 
 - [Various IP address collections (gist)](https://gist.github.com/iamwildtuna/7772b7c84a11bf6e1385f23096a73a15)
 - [IP addresses in Amnezia format (gist)](https://gist.github.com/iamwildtuna/ea245d39c60753db9150e5fb0da4a5b7)
@@ -149,6 +163,13 @@ Ready-to-use sets are already available in the [`ips/`](https://github.com/Frisk
 
 ## Useful Links
 
+- [vpn-infra](https://github.com/Friskes/vpn-infra) — the author's repository for deploying a self-hosted VPN server
 - [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) — VPN client with obfuscation support for Windows, macOS, Android, iOS
 - [WireSock VPN Client](https://www.wiresock.net/) — WireGuard client for Windows with split tunneling support
 - [WireGuard](https://github.com/WireGuard/wireguard-windows) — official WireGuard client for Windows
+
+---
+
+## License
+
+The project is distributed under the [MIT](LICENSE) license.
