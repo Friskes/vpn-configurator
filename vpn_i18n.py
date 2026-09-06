@@ -57,36 +57,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_success_title": "Done",
         "gui_nav_wireguard": "WireGuard config",
         "gui_nav_merge": "Merge files",
-        "gui_wg_title": "WireGuard config",
-        "gui_wg_subtitle": (
-            "Adds IP addresses for split tunneling to an existing .conf file "
-            "(WireGuard, Amnezia, WireSock and other compatible clients)."
-        ),
-        "gui_merge_title": "Merge / convert files",
-        "gui_merge_subtitle": (
-            "Merges IP address files into one without duplicates; the output format is your choice. "
-            "One input file plus a different output format works as a conversion."
-        ),
         "gui_source_conf": "Existing .conf file:",
         "gui_new_conf": "New .conf file:",
-        "gui_route_listed": "Tunnel only the listed IP addresses",
-        "gui_route_all": "Tunnel all traffic (0.0.0.0/0)",
-        "gui_client_label": "VPN client:",
+        "gui_card_source": "Source config",
+        "gui_card_connection": "Connection settings",
+        "gui_card_output": "Output",
+        "gui_route_label": "What goes into the tunnel",
+        "gui_route_listed": "Only the IP addresses from the files below",
+        "gui_route_all": "All traffic (only 0.0.0.0/0)",
+        "gui_route_keep": "The addresses already in the source config (without 0.0.0.0/0)",
+        "gui_route_keep_tooltip": (
+            "Keeps the specific addresses from the source AllowedIPs.\n"
+            "Unavailable when it only has 0.0.0.0/0 — there is nothing to keep."
+        ),
+        "gui_client_label": "VPN client",
         "gui_client_wireguard": "Classic WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (obfuscation + extra filters)",
         "gui_client_android": "WireGuard for Android (app filter)",
         "gui_android_settings": "WireGuard for Android settings",
-        "gui_android_warning": (
-            "ExcludedApplications / IncludedApplications are understood only by WireGuard for "
-            "Android and its forks (AmneziaWG, WG Tunnel). Desktop clients reject such a config "
-            "with an 'Invalid key' error.\n"
-            "There is no DisallowedIPs key here, so in the 'tunnel all traffic' mode the VPN "
-            "server address from Endpoint is subtracted from AllowedIPs itself — that is why the "
-            "list turns into a set of ranges instead of a single 0.0.0.0/0."
-        ),
-        "gui_packages_mode_note": (
-            "The app filter has two mutually exclusive modes: a blacklist "
-            "(ExcludedApplications) or a whitelist (IncludedApplications)."
+        "gui_android_note_tooltip": (
+            "Only WireGuard for Android and its forks (AmneziaWG, WG Tunnel) understand\n"
+            "the app filter keys; desktop clients reject such a config with an 'Invalid key' error.\n"
+            "There is no DisallowedIPs key here, so in the 'all traffic' mode\n"
+            "the VPN server address from Endpoint is subtracted from AllowedIPs itself —\n"
+            "the list becomes a set of ranges instead of a single 0.0.0.0/0."
         ),
         "gui_apps_mode_excluded": "Exclude these apps from the tunnel (ExcludedApplications)",
         "gui_apps_mode_included": "Tunnel ONLY these apps (IncludedApplications)",
@@ -104,22 +98,32 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_wiresock_settings": "WireSock settings",
         "gui_wiresock_priority": (
-            "Filter DisallowedIPs complements AllowedIPs.\n"
-            "In the 'tunnel all traffic' mode the VPN server address from Endpoint is added to "
-            "DisallowedIPs on its own: services hosted on the same server stay reachable directly, "
+            "DisallowedIPs complements AllowedIPs; in the 'all traffic' mode "
+            "the VPN server address is excluded automatically."
+        ),
+        "gui_wiresock_note_tooltip": (
+            "Services hosted on the same server stay reachable directly,\n"
             "without a hairpin through the tunnel."
         ),
         "gui_disallowed_ips_label": "Excluded IPs (DisallowedIPs):",
-        "gui_apps_label": "Applications:",
-        "gui_apps_mode_note": (
-            "The app filter has two mutually exclusive modes: a blacklist "
-            "(DisallowedApps) or a whitelist (AllowedApps)."
+        "gui_cut_ips": "Carve the excluded IPs out of AllowedIPs instead of the DisallowedIPs key",
+        "gui_cut_ips_tooltip": (
+            "The addresses from the files below are subtracted from AllowedIPs itself, "
+            "and the DisallowedIPs key is not written.\n"
+            "Handy for wide reserves like 10.0.0.0/8 when another VPN owns part of that space."
         ),
+        "gui_neighbour_conf": "Neighbour VPN config (its server and subnets are excluded):",
+        "gui_neighbour_tooltip": (
+            "For when both VPNs run in the system at the same time:\n"
+            "the neighbour's subnets and server address are subtracted from this config's\n"
+            "AllowedIPs so the tunnels do not fight over the same traffic."
+        ),
+        "gui_apps_label": "Applications:",
         "gui_apps_mode_disallowed": "Exclude these apps from the tunnel (DisallowedApps)",
         "gui_apps_mode_allowed": "Tunnel ONLY these apps (AllowedApps)",
         "gui_exclude_lan": "Keep the local network outside the tunnel",
         "gui_exclude_lan_tooltip": (
-            "Adds to DisallowedIPs:\n"
+            "Cuts these ranges out of AllowedIPs itself:\n"
             "192.168.0.0/16 — home LAN (wider than /24: survives a router subnet change);\n"
             "172.16.0.0/12 — the second private zone (Docker, corporate networks);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"
@@ -143,16 +147,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_preview_label": "Result preview (editable):",
         "gui_preview_label_dirty": "Result preview (edited manually):",
-        "gui_preview_placeholder": (
-            "Fill in the fields above — the content of the resulting file will appear here. "
-            "You can edit the text before saving."
-        ),
+        "gui_preview_placeholder": "Fill in the form on the left — the result appears here.",
+        "gui_preview_error": "No preview yet: {error}",
         "gui_preview_discard_title": "Unsaved edits",
         "gui_preview_discard_question": (
             "The preview was edited manually. Switch the page and lose the edits?"
         ),
         "gui_filetype_exe": "Applications and lists",
-        "gui_files_label": "IP address files:",
+        "gui_files_label": "IP address files",
         "gui_add_files": "Add files...",
         "gui_clear": "Clear all",
         "gui_run_wg": "Create config",
@@ -166,13 +168,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_save_as": "Save as...",
         "gui_placeholder_file": "File path, or drag & drop a file here",
         "gui_placeholder_save": 'Click "Save as..." and choose where to save the file',
-        "gui_placeholder_save_dnd": "Choose where to save, or drop an existing file to overwrite",
+        "gui_placeholder_save_dnd": "Where to save (or drop a file to overwrite)",
         "gui_drop_hint": "Drag files here or use the button",
         "gui_theme_system": "System",
         "gui_theme_light": "Light",
         "gui_theme_dark": "Dark",
         "gui_err_need_conf": "Select the existing .conf file.",
         "gui_err_need_files": "Add at least one file with IP addresses.",
+        "gui_err_no_keep_ips": (
+            "The source config has no specific addresses in AllowedIPs — only 0.0.0.0/0."
+        ),
         "gui_err_need_output": "Specify the output file name.",
         "gui_overwrite_title": "File exists",
         "gui_overwrite_question": "The file already exists:\n{path}\n\nOverwrite it?",
@@ -214,36 +219,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_success_title": "Готово",
         "gui_nav_wireguard": "WireGuard конфиг",
         "gui_nav_merge": "Объединение файлов",
-        "gui_wg_title": "WireGuard конфиг",
-        "gui_wg_subtitle": (
-            "Добавляет IP-адреса для раздельного туннелирования в существующий .conf файл "
-            "(WireGuard, Amnezia, WireSock и другие совместимые клиенты)."
-        ),
-        "gui_merge_title": "Объединение / конвертация файлов",
-        "gui_merge_subtitle": (
-            "Объединяет файлы с IP-адресами в один без дубликатов; формат результата на выбор. "
-            "Один файл на входе и другой формат на выходе — это конвертация."
-        ),
         "gui_source_conf": "Существующий .conf файл:",
         "gui_new_conf": "Новый .conf файл:",
-        "gui_route_listed": "Туннелировать только указанные IP-адреса",
-        "gui_route_all": "Туннелировать весь трафик (0.0.0.0/0)",
-        "gui_client_label": "VPN-клиент:",
+        "gui_card_source": "Исходный конфиг",
+        "gui_card_connection": "Параметры соединения",
+        "gui_card_output": "Результат",
+        "gui_route_label": "В туннель пойдёт",
+        "gui_route_listed": "Только IP-адреса из файлов ниже",
+        "gui_route_all": "Весь трафик (только 0.0.0.0/0)",
+        "gui_route_keep": "Адреса из исходного конфига (без 0.0.0.0/0)",
+        "gui_route_keep_tooltip": (
+            "Оставляет конкретные адреса из AllowedIPs исходника.\n"
+            "Недоступно, когда там только 0.0.0.0/0 — оставлять нечего."
+        ),
+        "gui_client_label": "VPN-клиент",
         "gui_client_wireguard": "Классический WireGuard (WireGuard, Amnezia, ...)",
         "gui_client_wiresock": "WireSock (обфускация + доп. фильтры)",
         "gui_client_android": "WireGuard для Android (фильтр приложений)",
         "gui_android_settings": "Параметры WireGuard для Android",
-        "gui_android_warning": (
-            "Ключи ExcludedApplications / IncludedApplications понимает только WireGuard для "
-            "Android и его форки (AmneziaWG, WG Tunnel). Десктопные клиенты откажутся грузить "
-            "такой конфиг с ошибкой «Invalid key».\n"
-            "Ключа DisallowedIPs здесь нет, поэтому в режиме «весь трафик» адрес VPN-сервера из "
-            "Endpoint вычитается прямо из AllowedIPs — из-за этого список превращается в набор "
-            "диапазонов вместо одного 0.0.0.0/0."
-        ),
-        "gui_packages_mode_note": (
-            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
-            "(ExcludedApplications) или белый (IncludedApplications)."
+        "gui_android_note_tooltip": (
+            "Ключи фильтра приложений понимает только WireGuard для Android и его форки\n"
+            "(AmneziaWG, WG Tunnel); десктопные клиенты отвергнут такой конфиг с «Invalid key».\n"
+            "Ключа DisallowedIPs здесь нет, поэтому в режиме «весь трафик»\n"
+            "адрес VPN-сервера из Endpoint вычитается прямо из AllowedIPs —\n"
+            "список превращается в набор диапазонов вместо одного 0.0.0.0/0."
         ),
         "gui_apps_mode_excluded": "Исключить эти приложения из туннеля (ExcludedApplications)",
         "gui_apps_mode_included": "В туннель ТОЛЬКО эти приложения (IncludedApplications)",
@@ -261,21 +260,32 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_wiresock_settings": "Параметры WireSock",
         "gui_wiresock_priority": (
-            "Фильтр DisallowedIPs дополняет AllowedIPs.\n"
-            "В режиме «весь трафик» адрес VPN-сервера из Endpoint добавляется в DisallowedIPs сам: "
-            "сервисы на том же сервере остаются доступны напрямую, без крюка через туннель."
+            "DisallowedIPs дополняет AllowedIPs; в режиме «весь трафик» "
+            "адрес VPN-сервера исключается автоматически."
+        ),
+        "gui_wiresock_note_tooltip": (
+            "Сервисы на том же сервере остаются доступны напрямую,\n"
+            "без крюка через туннель."
         ),
         "gui_disallowed_ips_label": "Исключённые IP (DisallowedIPs):",
-        "gui_apps_label": "Приложения:",
-        "gui_apps_mode_note": (
-            "Фильтр приложений имеет два взаимоисключающих режима: чёрный список "
-            "(DisallowedApps) или белый список (AllowedApps)."
+        "gui_cut_ips": "Вырезать исключённые IP из AllowedIPs вместо ключа DisallowedIPs",
+        "gui_cut_ips_tooltip": (
+            "Адреса из файлов ниже вычитаются из самого AllowedIPs, "
+            "а ключ DisallowedIPs не пишется.\n"
+            "Удобно для широких резервов вроде 10.0.0.0/8, когда часть этой зоны занята другим VPN."
         ),
+        "gui_neighbour_conf": "Конфиг соседнего VPN (его сервер и подсети исключаются):",
+        "gui_neighbour_tooltip": (
+            "На случай, когда оба VPN работают в системе одновременно:\n"
+            "подсети и адрес сервера соседа вычитаются из AllowedIPs этого конфига,\n"
+            "чтобы туннели не боролись за один и тот же трафик."
+        ),
+        "gui_apps_label": "Приложения:",
         "gui_apps_mode_disallowed": "Исключить эти приложения из туннеля (DisallowedApps)",
         "gui_apps_mode_allowed": "В туннель ТОЛЬКО эти приложения (AllowedApps)",
         "gui_exclude_lan": "Не пускать локальную сеть в туннель",
         "gui_exclude_lan_tooltip": (
-            "Добавляет в DisallowedIPs:\n"
+            "Вырезает эти диапазоны из самого AllowedIPs:\n"
             "192.168.0.0/16 — домашняя LAN (шире /24: переживёт смену подсети роутера);\n"
             "172.16.0.0/12 — вторая приватная зона (Docker, корпоративные сети);\n"
             "169.254.0.0/16 — link-local (APIPA);\n"
@@ -299,16 +309,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "gui_preview_label": "Предпросмотр результата (можно редактировать):",
         "gui_preview_label_dirty": "Предпросмотр результата (изменён вручную):",
-        "gui_preview_placeholder": (
-            "Заполните поля выше — здесь появится содержимое итогового файла. "
-            "Текст можно поправить перед сохранением."
-        ),
+        "gui_preview_placeholder": "Заполните форму слева — здесь появится итоговый файл.",
+        "gui_preview_error": "Предпросмотра пока нет: {error}",
         "gui_preview_discard_title": "Несохранённые правки",
         "gui_preview_discard_question": (
             "Предпросмотр изменён вручную. Переключить страницу и потерять правки?"
         ),
         "gui_filetype_exe": "Приложения и списки",
-        "gui_files_label": "Файлы с IP-адресами:",
+        "gui_files_label": "Файлы с IP-адресами",
         "gui_add_files": "Добавить файлы...",
         "gui_clear": "Очистить всё",
         "gui_run_wg": "Создать конфиг",
@@ -322,15 +330,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_save_as": "Сохранить как...",
         "gui_placeholder_file": "Путь к файлу, либо перетащите файл сюда",
         "gui_placeholder_save": "Нажмите «Сохранить как...» и выберите, куда сохранить файл",
-        "gui_placeholder_save_dnd": (
-            "Выберите, куда сохранить, либо перетащите существующий файл для перезаписи"
-        ),
+        "gui_placeholder_save_dnd": "Куда сохранить (или перетащите файл для перезаписи)",
         "gui_drop_hint": "Перетащите файлы сюда или используйте кнопку",
         "gui_theme_system": "Системная",
         "gui_theme_light": "Светлая",
         "gui_theme_dark": "Тёмная",
         "gui_err_need_conf": "Укажите существующий .conf файл.",
         "gui_err_need_files": "Добавьте хотя бы один файл с IP-адресами.",
+        "gui_err_no_keep_ips": (
+            "В исходном конфиге нет конкретных адресов в AllowedIPs — только 0.0.0.0/0."
+        ),
         "gui_err_need_output": "Укажите имя итогового файла.",
         "gui_overwrite_title": "Файл существует",
         "gui_overwrite_question": "Файл уже существует:\n{path}\n\nПерезаписать его?",

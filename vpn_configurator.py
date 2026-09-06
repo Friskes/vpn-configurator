@@ -279,6 +279,21 @@ def read_endpoint_ip(conf_path: Path | str) -> str | None:
     return _endpoint_ip(lines)
 
 
+def read_allowed_ips(conf_path: Path | str, *, include_catch_all: bool = False) -> list[str]:
+    """Адреса из [Peer] AllowedIPs существующего конфига; catch-all значения (0.0.0.0/0, ::/0)
+    по умолчанию отбрасываются. Нечитаемый файл или отсутствие секции — пустой список."""
+    try:
+        lines = _read_text(Path(conf_path)).splitlines()
+    except (VpnConfiguratorError, OSError):
+        return []
+    if "peer" not in _find_sections(lines):
+        return []
+    values = _get_values(lines, "peer", "AllowedIPs")
+    if include_catch_all:
+        return values
+    return [value for value in values if value not in ALL_TRAFFIC_IPS]
+
+
 def exclude_ips(source_ips: Sequence[str], excluded_ips: Sequence[str]) -> list[str]:
     """Диапазоны source_ips за вычетом excluded_ips, схлопнутые в минимальный список CIDR.
     Нужно там, где клиент не понимает отдельного ключа исключений и «всё, кроме X»

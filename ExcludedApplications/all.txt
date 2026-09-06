@@ -1,0 +1,2 @@
+# RustDesk (Android)
+com.carriez.flutter_hbb

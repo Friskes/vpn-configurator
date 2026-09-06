@@ -23,6 +23,7 @@ from vpn_configurator import (
     exclude_ips,
     merge_unique,
     parse_app_names,
+    read_allowed_ips,
     read_endpoint_ip,
     read_persistent_keepalive,
     validate_amnezia_text,
@@ -51,6 +52,11 @@ APP_MODE_INCLUDED = "included"
 
 IPS_CACHE_MAX = 16
 SYNTAX_MAX_LINES = 3000
+
+
+class FormIncompleteError(VpnConfiguratorError):
+    """Форма ещё не заполнена: placeholder предпросмотра не дублирует причину,
+    «заполните форму слева» уже говорит то же самое."""
 
 MONO_FONT_CANDIDATES = (
     "Cascadia Mono",
@@ -146,6 +152,7 @@ class Tooltip:
             self._window,
             text=tr(self.text_key),
             justify="left",
+            wraplength=700,
             font=(tkfont.nametofont("TkDefaultFont").actual("family"), 12),
             background="#2b2b2b" if dark else "#ffffe0",
             foreground="#e0e0e0" if dark else "#333333",
@@ -177,6 +184,7 @@ class FilePickerRow(ctk.CTkFrame):
         mode: str,
         dialog_options: Callable[[], dict],
         dnd: bool = True,
+        tooltip_key: str | None = None,
     ) -> None:
         super().__init__(master, fg_color="transparent")
         self.app = app
@@ -192,16 +200,29 @@ class FilePickerRow(ctk.CTkFrame):
 
         self.grid_columnconfigure(0, weight=1)
         label = ctk.CTkLabel(self, anchor="w")
-        label.grid(row=0, column=0, columnspan=2, sticky="w")
+        label.grid(row=0, column=0, columnspan=3, sticky="w")
         app.register_i18n(label, label_key)
+        if tooltip_key is not None:
+            Tooltip(label, tooltip_key)
 
         self.entry = ctk.CTkEntry(self)
-        self.entry.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(2, 0))
+        self.entry.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(2, 0))
         app.register_i18n(self.entry, placeholder_key, "placeholder_text")
         self.entry.bind("<KeyRelease>", self._on_manual_edit)
 
+        clear_button = ctk.CTkButton(
+            self,
+            text="✕",
+            width=28,
+            fg_color="transparent",
+            hover_color=("gray80", "gray30"),
+            text_color=("gray30", "gray70"),
+            command=self.clear,
+        )
+        clear_button.grid(row=1, column=1, padx=(0, 4), pady=(2, 0))
+
         button = ctk.CTkButton(self, width=130, command=self.browse)
-        button.grid(row=1, column=1, pady=(2, 0))
+        button.grid(row=1, column=2, pady=(2, 0))
         app.register_i18n(button, button_key)
 
         if app.dnd_enabled and dnd:
@@ -236,22 +257,33 @@ class FilePickerRow(ctk.CTkFrame):
         if self.mode == "open":
             self.app.schedule_preview()
 
+    def clear(self) -> None:
+        """Крестик: чистит путь и возвращает placeholder — CTkEntry сам показывает его
+        только по потере фокуса, а клик по кнопке фокус из entry не забирает."""
+        self.entry.delete(0, "end")
+        if self.focus_get() is not getattr(self.entry, "_entry", None):
+            self.entry._activate_placeholder()
+        self.dialog_confirmed_path = None
+        if self.mode == "open":
+            self.app.schedule_preview()
+
     def get(self) -> str:
         return self.entry.get().strip().strip('"')
 
 
 class FileListPicker(ctk.CTkFrame):
     """Список выбранных файлов: строка на файл с кнопкой удаления, drag & drop,
-    «Добавить файлы…» и «Очистить всё». Значения из путей извлекает вызывающий код."""
+    «Добавить файлы…» и «Очистить всё». Подсказка о форматах — tooltip, а не текст в форме;
+    label_key=None пропускает строку подписи (когда её роль играет заголовок карточки)."""
 
     def __init__(
         self,
         master: ctk.CTkFrame,
         app: "VpnConfiguratorApp",
-        label_key: str,
-        hint_key: str,
+        label_key: str | None,
+        tooltip_key: str,
         filetypes: Callable[[], list[tuple[str, str]]],
-        list_height: int = 120,
+        list_height: int = 50,
     ) -> None:
         super().__init__(master, fg_color="transparent")
         self.app = app
@@ -259,27 +291,23 @@ class FileListPicker(ctk.CTkFrame):
         self.filetypes = filetypes
 
         self.grid_columnconfigure(0, weight=1)
-        label = ctk.CTkLabel(self, anchor="w")
-        label.grid(row=0, column=0, columnspan=2, sticky="w")
-        app.register_i18n(label, label_key)
-
-        hint = ctk.CTkLabel(
-            self,
-            anchor="w",
-            justify="left",
-            wraplength=580,
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-        )
-        hint.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 2))
-        app.register_i18n(hint, hint_key)
+        row = 0
+        if label_key is not None:
+            label = ctk.CTkLabel(self, anchor="w")
+            label.grid(row=0, column=0, columnspan=2, sticky="w")
+            app.register_i18n(label, label_key)
+            Tooltip(label, tooltip_key)
+            row = 1
 
         self.list_frame = ctk.CTkScrollableFrame(self, height=list_height, fg_color=("gray92", "gray17"))
-        self.list_frame.grid(row=2, column=0, rowspan=2, sticky="nsew", padx=(0, 8))
+        self.list_frame.grid(row=row, column=0, rowspan=2, sticky="nsew", padx=(0, 8), pady=(2, 0))
         self.list_frame.grid_columnconfigure(0, weight=1)
+        # У CTkScrollbar «желаемая» высота 200px: без сброса она растягивает зону, игнорируя height
+        self.list_frame._scrollbar.configure(height=0)
+        Tooltip(getattr(self.list_frame, "_parent_canvas", self.list_frame), tooltip_key)
 
         self.add_button = ctk.CTkButton(self, width=150, command=self.add_files)
-        self.add_button.grid(row=2, column=1, sticky="n")
+        self.add_button.grid(row=row, column=1, sticky="n", pady=(2, 0))
         app.register_i18n(self.add_button, "gui_add_files")
 
         self.clear_button = ctk.CTkButton(
@@ -290,7 +318,7 @@ class FileListPicker(ctk.CTkFrame):
             text_color=("gray20", "gray80"),
             command=self.clear,
         )
-        self.clear_button.grid(row=3, column=1, sticky="n", pady=(6, 0))
+        self.clear_button.grid(row=row + 1, column=1, sticky="n", pady=(6, 0))
         app.register_i18n(self.clear_button, "gui_clear")
 
         if app.dnd_enabled:
@@ -339,7 +367,7 @@ class FileListPicker(ctk.CTkFrame):
             return
 
         for row, path in enumerate(self.paths):
-            name = ctk.CTkLabel(self.list_frame, anchor="w", text=path)
+            name = ctk.CTkLabel(self.list_frame, anchor="w", height=22, text=path)
             name.grid(row=row, column=0, sticky="ew", padx=(6, 4), pady=1)
 
             remove_button = ctk.CTkButton(
@@ -356,7 +384,7 @@ class FileListPicker(ctk.CTkFrame):
 
 
 class TextListBox(ctk.CTkFrame):
-    """Подпись, подсказка и многострочное поле для списка, который печатают руками:
+    """Подпись и многострочное поле для списка, который печатают руками:
     имя Android-пакета неоткуда взять перетаскиванием файла, как имя .exe."""
 
     def __init__(
@@ -364,8 +392,8 @@ class TextListBox(ctk.CTkFrame):
         master: ctk.CTkFrame,
         app: "VpnConfiguratorApp",
         label_key: str,
-        hint_key: str,
-        height: int = 90,
+        tooltip_key: str,
+        height: int = 62,
     ) -> None:
         super().__init__(master, fg_color="transparent")
         self.grid_columnconfigure(0, weight=1)
@@ -373,21 +401,12 @@ class TextListBox(ctk.CTkFrame):
         label = ctk.CTkLabel(self, anchor="w")
         label.grid(row=0, column=0, sticky="w")
         app.register_i18n(label, label_key)
-
-        hint = ctk.CTkLabel(
-            self,
-            anchor="w",
-            justify="left",
-            wraplength=580,
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-        )
-        hint.grid(row=1, column=0, sticky="w", pady=(0, 2))
-        app.register_i18n(hint, hint_key)
+        Tooltip(label, tooltip_key)
 
         self.textbox = ctk.CTkTextbox(self, height=height, wrap="none")
-        self.textbox.grid(row=2, column=0, sticky="ew")
+        self.textbox.grid(row=1, column=0, sticky="ew", pady=(2, 0))
         self.textbox.bind("<KeyRelease>", lambda _event: app.schedule_preview())
+        Tooltip(self.textbox, tooltip_key)
 
     def get(self) -> str:
         return self.textbox.get("1.0", "end-1c")
@@ -398,8 +417,8 @@ class TextListBox(ctk.CTkFrame):
 
 
 class VpnConfiguratorApp(ctk.CTk):
-    """Главное окно: вкладки и переключатели в верхней полосе, настройки страницы,
-    ниже — редактируемый предпросмотр результата с подсветкой синтаксиса."""
+    """Главное окно: вкладки и переключатели в верхней полосе, слева — скроллируемая
+    колонка настроек, справа — всегда видимый редактируемый предпросмотр результата."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -411,8 +430,6 @@ class VpnConfiguratorApp(ctk.CTk):
             except RuntimeError:
                 pass
 
-        self.geometry("1000x700")
-        self.minsize(820, 620)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
@@ -432,7 +449,7 @@ class VpnConfiguratorApp(ctk.CTk):
         self._mono_font = ctk.CTkFont(family=_mono_family(), size=13)
 
         self._build_topbar()
-        self.content = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.content = ctk.CTkScrollableFrame(self, width=600, fg_color="transparent")
         self.content.grid(row=1, column=0, sticky="nsew")
         self.content.grid_columnconfigure(0, weight=1)
         # CTkScrollableFrame на Windows ставит yscrollincrement=1px — колесо скроллит еле-еле
@@ -441,9 +458,27 @@ class VpnConfiguratorApp(ctk.CTk):
         self._build_merge_page()
         self._build_preview_area()
         self._select_page(self.current_page, initial=True)
+        self._fit_window_to_preview()
 
         if not self.dnd_enabled:
             messagebox.showwarning(tr("app_title"), tr("gui_dnd_unavailable"))
+
+    def _fit_window_to_preview(self) -> None:
+        """Панель предпросмотра — фиксированной ширины, впритык к типовой строке конфига
+        (base64-ключ): при растягивании окна лишняя ширина уходит колонке настроек, а не панели.
+        Меряем фактическим шрифтом отрисовки — логический размер CTkFont расходится
+        с DPI-скейлом виджета, и панель выходила то шире, то уже текста."""
+        box_font = tkfont.Font(font=self._preview_textbox().cget("font"))
+        text_px = box_font.measure("PresharedKey = " + "A" * 44)
+        scaling = self._get_window_scaling()
+        box_width = int(text_px / scaling) + 50
+        self.preview_box.configure(width=box_width)
+        width = 636 + box_width + 20
+        screen_w = int(self.winfo_screenwidth() / scaling)
+        screen_h = int(self.winfo_screenheight() / scaling)
+        width = min(width, screen_w - 40)
+        self.geometry(f"{width}x{min(720, screen_h - 80)}")
+        self.minsize(width, 600)
 
     def report_callback_exception(self, exc_type, exc_value, _exc_tb) -> None:
         """Ловит исключения из Tk-колбэков (after, drag & drop, события) в окно ошибки:
@@ -465,7 +500,7 @@ class VpnConfiguratorApp(ctk.CTk):
 
     def _build_topbar(self) -> None:
         topbar = ctk.CTkFrame(self, corner_radius=0)
-        topbar.grid(row=0, column=0, sticky="ew")
+        topbar.grid(row=0, column=0, columnspan=2, sticky="ew")
         topbar.grid_columnconfigure(2, weight=1)
 
         nav_items = [("wireguard", "gui_nav_wireguard"), ("merge", "gui_nav_merge")]
@@ -545,27 +580,28 @@ class VpnConfiguratorApp(ctk.CTk):
             button.configure(fg_color=("gray75", "gray28") if active else "transparent")
         for page_name, page in self.pages.items():
             if page_name == name:
-                page.grid(row=0, column=0, sticky="nsew", padx=24, pady=(16, 0))
+                page.grid(row=0, column=0, sticky="nsew", padx=(16, 8), pady=(16, 0))
             else:
                 page.grid_forget()
         self._refresh_preview()
 
     def _build_preview_area(self) -> None:
-        separator = ctk.CTkFrame(
-            self.content, height=2, corner_radius=0, fg_color=("gray70", "gray30")
-        )
-        separator.grid(row=1, column=0, sticky="ew", padx=24, pady=(10, 0))
+        panel = ctk.CTkFrame(self, fg_color="transparent")
+        panel.grid(row=1, column=1, sticky="nsew", padx=(4, 16), pady=(16, 12))
+        panel.grid_rowconfigure(1, weight=1)
+        panel.grid_columnconfigure(0, weight=1)
 
         self.preview_label = ctk.CTkLabel(
-            self.content, font=ctk.CTkFont(size=13, weight="bold"), anchor="w"
+            panel, font=ctk.CTkFont(size=13, weight="bold"), anchor="w"
         )
-        self.preview_label.grid(row=2, column=0, sticky="w", padx=24, pady=(6, 0))
+        self.preview_label.grid(row=0, column=0, sticky="w")
 
-        self.preview_box = ctk.CTkTextbox(self.content, height=360, wrap="none", font=self._mono_font)
-        self.preview_box.grid(row=3, column=0, sticky="nsew", padx=24, pady=(4, 12))
+        self.preview_box = ctk.CTkTextbox(panel, wrap="none", font=self._mono_font)
+        self.preview_box.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
         self.preview_box.tag_config("placeholder", foreground="#808080")
         self.preview_box.bind("<<Modified>>", self._on_preview_modified)
-        self.preview_box.bind("<FocusIn>", self._on_preview_focus)
+        self.preview_box.bind("<Key>", self._on_preview_key)
+        self.preview_box.bind("<<Paste>>", lambda _event: self._clear_placeholder())
         self.preview_box.bind("<FocusOut>", self._on_preview_focus_out)
         self._preview_textbox().bind("<MouseWheel>", self._on_preview_wheel)
 
@@ -595,28 +631,39 @@ class VpnConfiguratorApp(ctk.CTk):
             for match in pattern.finditer(text):
                 box.tag_add(tag, f"1.0+{match.start()}c", f"1.0+{match.end()}c")
 
-    def _create_page(self, name: str, title_key: str, subtitle_key: str) -> ctk.CTkFrame:
+    def _create_page(self, name: str) -> ctk.CTkFrame:
         page = ctk.CTkFrame(self.content, fg_color="transparent")
         page.grid_columnconfigure(0, weight=1)
-
-        title = ctk.CTkLabel(page, font=ctk.CTkFont(size=20, weight="bold"), anchor="w")
-        title.grid(row=0, column=0, sticky="w")
-        self.register_i18n(title, title_key)
-
-        subtitle = ctk.CTkLabel(
-            page, anchor="w", justify="left", wraplength=640, text_color=("gray30", "gray70")
-        )
-        subtitle.grid(row=1, column=0, sticky="w", pady=(2, 10))
-        self.register_i18n(subtitle, subtitle_key)
-
         self.pages[name] = page
         return page
+
+    def _build_card(
+        self, page: ctk.CTkFrame, row: int, title_key: str, tooltip_key: str | None = None
+    ) -> ctk.CTkFrame:
+        """Карточка-блок настроек с заголовком: визуально группирует связанные поля.
+        Содержимое вызывающий код кладёт со строки 1 с padx=12."""
+        card = ctk.CTkFrame(
+            page,
+            corner_radius=8,
+            border_width=1,
+            border_color=("gray65", "gray35"),
+            fg_color=("gray90", "gray13"),
+        )
+        card.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        card.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(card, anchor="w", font=ctk.CTkFont(size=12, weight="bold"))
+        title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 2))
+        self.register_i18n(title, title_key)
+        if tooltip_key is not None:
+            Tooltip(title, tooltip_key)
+        return card
 
     def _create_run_button(
         self, page: ctk.CTkFrame, row: int, text_key: str, command: Callable[[], str | None]
     ) -> None:
         button = ctk.CTkButton(page, height=38, width=200, command=lambda: self._execute(command))
-        button.grid(row=row, column=0, pady=(10, 6))
+        button.grid(row=row, column=0, pady=(10, 12))
         self.register_i18n(button, text_key)
 
     def _ip_filetypes(self) -> list[tuple[str, str]]:
@@ -630,33 +677,36 @@ class VpnConfiguratorApp(ctk.CTk):
         return [(tr("gui_filetype_exe"), "*.*"), (tr("gui_filetype_txt"), "*.txt")]
 
     def _build_wireguard_page(self) -> None:
-        page = self._create_page("wireguard", "gui_wg_title", "gui_wg_subtitle")
+        page = self._create_page("wireguard")
 
-        self.wg_src = FilePickerRow(page, self, "gui_source_conf", "open", self._conf_open_options)
-        self.wg_src.grid(row=2, column=0, sticky="ew", pady=3)
+        source_card = self._build_card(page, 0, "gui_card_source")
+        self.wg_src = FilePickerRow(source_card, self, "gui_source_conf", "open", self._conf_open_options)
+        self.wg_src.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
 
+        route_card = self._build_card(page, 1, "gui_route_label")
         self.wg_route = ctk.StringVar(value="listed")
-        route_frame = ctk.CTkFrame(page, fg_color="transparent")
-        route_frame.grid(row=3, column=0, sticky="w", pady=(4, 2))
-        for row, (value, key) in enumerate([("listed", "gui_route_listed"), ("all", "gui_route_all")]):
+        route_keys = [
+            ("listed", "gui_route_listed"),
+            ("all", "gui_route_all"),
+            ("keep", "gui_route_keep"),
+        ]
+        for row, (value, key) in enumerate(route_keys, start=1):
             radio = ctk.CTkRadioButton(
-                route_frame, variable=self.wg_route, value=value, command=self._on_wg_route_change
+                route_card, variable=self.wg_route, value=value, command=self._on_wg_route_change
             )
-            radio.grid(row=row, column=0, sticky="w", pady=2)
+            radio.grid(row=row, column=0, sticky="w", padx=12, pady=(2, 8 if row == len(route_keys) else 2))
             self.register_i18n(radio, key)
+            if value == "keep":
+                self.wg_route_keep_radio = radio
+                Tooltip(radio, "gui_route_keep_tooltip")
 
         self.wg_files = FileListPicker(
-            page, self, "gui_allowed_ips_label", "gui_hint_ip_files", self._ip_filetypes
+            route_card, self, "gui_allowed_ips_label", "gui_hint_ip_files", self._ip_filetypes
         )
-        self.wg_files.grid(row=4, column=0, sticky="ew", pady=3)
+        self.wg_files.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 10))
         self._file_lists.append(self.wg_files)
 
-        client_frame = ctk.CTkFrame(page, fg_color="transparent")
-        client_frame.grid(row=5, column=0, sticky="w", pady=(4, 0))
-        client_label = ctk.CTkLabel(client_frame)
-        client_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.register_i18n(client_label, "gui_client_label")
-
+        client_card = self._build_card(page, 2, "gui_client_label")
         self.wg_client = ctk.StringVar(value=CLIENT_WIREGUARD)
         client_keys = [
             (CLIENT_WIREGUARD, "gui_client_wireguard"),
@@ -665,20 +715,20 @@ class VpnConfiguratorApp(ctk.CTk):
         ]
         for row, (value, key) in enumerate(client_keys, start=1):
             radio = ctk.CTkRadioButton(
-                client_frame, variable=self.wg_client, value=value, command=self._on_wg_client_change
+                client_card, variable=self.wg_client, value=value, command=self._on_wg_client_change
             )
-            radio.grid(row=row, column=0, sticky="w", pady=2)
+            radio.grid(row=row, column=0, sticky="w", padx=12, pady=(2, 8 if row == len(client_keys) else 2))
             self.register_i18n(radio, key)
 
         self.wiresock_frame = self._build_client_frame(
-            page, 6, "gui_wiresock_settings", "gui_wiresock_priority"
+            client_card, 4, "gui_wiresock_settings", "gui_wiresock_note_tooltip", "gui_wiresock_priority"
         )
 
-        self.wg_exclude_lan = ctk.BooleanVar(value=False)
+        self.wg_exclude_lan = ctk.BooleanVar(value=True)
         exclude_lan_box = ctk.CTkCheckBox(
             self.wiresock_frame, variable=self.wg_exclude_lan, command=self.schedule_preview
         )
-        exclude_lan_box.grid(row=2, column=0, sticky="w", padx=12, pady=(4, 0))
+        exclude_lan_box.grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.register_i18n(exclude_lan_box, "gui_exclude_lan")
         Tooltip(exclude_lan_box, "gui_exclude_lan_tooltip")
 
@@ -686,33 +736,40 @@ class VpnConfiguratorApp(ctk.CTk):
         bypass_lan_box = ctk.CTkCheckBox(
             self.wiresock_frame, variable=self.wg_bypass_lan, command=self.schedule_preview
         )
-        bypass_lan_box.grid(row=3, column=0, sticky="w", padx=12, pady=(4, 0))
+        bypass_lan_box.grid(row=3, column=0, sticky="w", pady=(4, 0))
         self.register_i18n(bypass_lan_box, "gui_bypass_lan")
         Tooltip(bypass_lan_box, "gui_bypass_lan_tooltip")
+
+        self.wg_cut_ips = ctk.BooleanVar(value=True)
+        cut_ips_box = ctk.CTkCheckBox(
+            self.wiresock_frame, variable=self.wg_cut_ips, command=self.schedule_preview
+        )
+        cut_ips_box.grid(row=4, column=0, sticky="w", pady=(4, 0))
+        self.register_i18n(cut_ips_box, "gui_cut_ips")
+        Tooltip(cut_ips_box, "gui_cut_ips_tooltip")
 
         self.wg_disallowed_ips = FileListPicker(
             self.wiresock_frame, self, "gui_disallowed_ips_label", "gui_hint_ip_files", self._ip_filetypes
         )
-        self.wg_disallowed_ips.grid(row=4, column=0, sticky="ew", padx=12, pady=(4, 2))
+        self.wg_disallowed_ips.grid(row=5, column=0, sticky="ew", pady=(4, 2))
         self._file_lists.append(self.wg_disallowed_ips)
 
         self.wg_app_mode = ctk.StringVar(value=APP_MODE_DISALLOWED)
         self._build_mode_radios(
             self.wiresock_frame,
-            5,
+            6,
             self.wg_app_mode,
-            "gui_apps_mode_note",
             [(APP_MODE_DISALLOWED, "gui_apps_mode_disallowed"), (APP_MODE_ALLOWED, "gui_apps_mode_allowed")],
         )
 
         self.wg_apps = FileListPicker(
             self.wiresock_frame, self, "gui_apps_label", "gui_hint_app_files", self._app_filetypes
         )
-        self.wg_apps.grid(row=6, column=0, sticky="ew", padx=12, pady=(4, 10))
+        self.wg_apps.grid(row=7, column=0, sticky="ew", pady=(4, 8))
         self._file_lists.append(self.wg_apps)
 
         self.android_frame = self._build_client_frame(
-            page, 7, "gui_android_settings", "gui_android_warning"
+            client_card, 5, "gui_android_settings", "gui_android_note_tooltip"
         )
 
         self.wg_package_mode = ctk.StringVar(value=APP_MODE_EXCLUDED)
@@ -720,17 +777,27 @@ class VpnConfiguratorApp(ctk.CTk):
             self.android_frame,
             2,
             self.wg_package_mode,
-            "gui_packages_mode_note",
             [(APP_MODE_EXCLUDED, "gui_apps_mode_excluded"), (APP_MODE_INCLUDED, "gui_apps_mode_included")],
         )
 
         self.wg_packages = TextListBox(
             self.android_frame, self, "gui_packages_label", "gui_hint_packages"
         )
-        self.wg_packages.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 10))
+        self.wg_packages.grid(row=3, column=0, sticky="ew", pady=(6, 8))
 
-        keepalive_frame = ctk.CTkFrame(page, fg_color="transparent")
-        keepalive_frame.grid(row=8, column=0, sticky="w", pady=(6, 0))
+        self.wg_neighbour_conf = FilePickerRow(
+            client_card,
+            self,
+            "gui_neighbour_conf",
+            "open",
+            self._conf_open_options,
+            tooltip_key="gui_neighbour_tooltip",
+        )
+        self.wg_neighbour_conf.grid(row=6, column=0, sticky="ew", padx=12, pady=(0, 10))
+
+        connection_card = self._build_card(page, 3, "gui_card_connection")
+        keepalive_frame = ctk.CTkFrame(connection_card, fg_color="transparent")
+        keepalive_frame.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
         keepalive_label = ctk.CTkLabel(keepalive_frame)
         keepalive_label.grid(row=0, column=0, padx=(0, 10))
         self.register_i18n(keepalive_label, "gui_keepalive_label")
@@ -742,45 +809,42 @@ class VpnConfiguratorApp(ctk.CTk):
         Tooltip(keepalive_label, "gui_keepalive_tooltip")
         Tooltip(self.wg_keepalive, "gui_keepalive_tooltip")
 
+        output_card = self._build_card(page, 4, "gui_card_output")
         self.wg_dst = FilePickerRow(
-            page, self, "gui_new_conf", "save", self._wg_save_options, dnd=False
+            output_card, self, "gui_new_conf", "save", self._wg_save_options, dnd=False
         )
-        self.wg_dst.grid(row=9, column=0, sticky="ew", pady=3)
+        self.wg_dst.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 0))
 
-        self._create_run_button(page, 10, "gui_run_wg", self._run_wireguard)
+        self._create_run_button(output_card, 2, "gui_run_wg", self._run_wireguard)
 
         self._on_wg_route_change()
         self._on_wg_client_change()
 
     def _build_client_frame(
-        self, page: ctk.CTkFrame, row: int, title_key: str, note_key: str
+        self, parent: ctk.CTkFrame, row: int, title_key: str, tooltip_key: str, note_key: str | None = None
     ) -> ctk.CTkFrame:
-        """Рамка настроек одного VPN-клиента: заголовок и пояснение занимают строки 0-1,
-        виджеты вызывающего кода размещаются начиная со строки 2."""
-        frame = ctk.CTkFrame(
-            page,
-            corner_radius=8,
-            border_width=1,
-            border_color=("gray65", "gray35"),
-            fg_color=("gray90", "gray13"),
-        )
-        frame.grid(row=row, column=0, sticky="ew", pady=(6, 3))
+        """Секция настроек одного VPN-клиента внутри карточки: заголовок с подсказкой — строка 0,
+        необязательное пояснение — строка 1, виджеты вызывающего кода — со строки 2."""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=row, column=0, sticky="ew", padx=12, pady=(2, 0))
         frame.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(frame, anchor="w", font=ctk.CTkFont(size=12, weight="bold"))
-        title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 0))
+        title.grid(row=0, column=0, sticky="w", pady=(4, 0))
         self.register_i18n(title, title_key)
+        Tooltip(title, tooltip_key)
 
-        note = ctk.CTkLabel(
-            frame,
-            anchor="w",
-            justify="left",
-            wraplength=600,
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-        )
-        note.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
-        self.register_i18n(note, note_key)
+        if note_key is not None:
+            note = ctk.CTkLabel(
+                frame,
+                anchor="w",
+                justify="left",
+                wraplength=540,
+                font=ctk.CTkFont(size=11),
+                text_color=("gray40", "gray60"),
+            )
+            note.grid(row=1, column=0, sticky="w", pady=(0, 4))
+            self.register_i18n(note, note_key)
         return frame
 
     def _build_mode_radios(
@@ -788,26 +852,12 @@ class VpnConfiguratorApp(ctk.CTk):
         parent: ctk.CTkFrame,
         row: int,
         variable: ctk.StringVar,
-        note_key: str,
         items: list[tuple[str, str]],
     ) -> None:
-        """Переключатель взаимоисключающих режимов вместе с пояснением к нему: текст стоит
-        вплотную к своим радиокнопкам, а не в общей шапке рамки клиента."""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.grid(row=row, column=0, sticky="w", padx=12, pady=(6, 0))
+        frame.grid(row=row, column=0, sticky="w", pady=(6, 0))
 
-        note = ctk.CTkLabel(
-            frame,
-            anchor="w",
-            justify="left",
-            wraplength=600,
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-        )
-        note.grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.register_i18n(note, note_key)
-
-        for index, (value, key) in enumerate(items, start=1):
+        for index, (value, key) in enumerate(items):
             radio = ctk.CTkRadioButton(
                 frame, variable=variable, value=value, command=self.schedule_preview
             )
@@ -826,6 +876,16 @@ class VpnConfiguratorApp(ctk.CTk):
             "initialfile": f"{stem}_split.conf",
         }
 
+    def _update_keep_radio_state(self) -> None:
+        """Гасит радио «адреса из исходного конфига», когда оставлять нечего (в AllowedIPs
+        только catch-all): серое радио понятнее, чем пустой предпросмотр с текстом ошибки."""
+        src = self.wg_src.get()
+        enabled = bool(src) and bool(read_allowed_ips(src))
+        self.wg_route_keep_radio.configure(state="normal" if enabled else "disabled")
+        if not enabled and self.wg_route.get() == "keep":
+            self.wg_route.set("listed")
+            self._on_wg_route_change()
+
     def _on_wg_route_change(self) -> None:
         if self.wg_route.get() == "listed":
             self.wg_files.grid()
@@ -840,6 +900,10 @@ class VpnConfiguratorApp(ctk.CTk):
                 frame.grid()
             else:
                 frame.grid_remove()
+        if client == CLIENT_WIREGUARD:
+            self.wg_neighbour_conf.grid_remove()
+        else:
+            self.wg_neighbour_conf.grid()
         self.schedule_preview()
 
     def _wg_client_kwargs(self) -> dict:
@@ -849,11 +913,11 @@ class VpnConfiguratorApp(ctk.CTk):
         client = self.wg_client.get()
 
         if client == CLIENT_WIRESOCK:
-            disallowed_ips = list(LAN_EXCLUDE_IPS) if self.wg_exclude_lan.get() else []
-            if self.wg_disallowed_ips.paths:
-                disallowed_ips = merge_unique(
-                    disallowed_ips, self._collect_ips_cached(self.wg_disallowed_ips.paths)
-                )
+            disallowed_ips = (
+                self._collect_ips_cached(self.wg_disallowed_ips.paths)
+                if self.wg_disallowed_ips.paths and not self.wg_cut_ips.get()
+                else []
+            )
             apps = collect_app_names(self.wg_apps.paths) if self.wg_apps.paths else []
             allowed_mode = self.wg_app_mode.get() == APP_MODE_ALLOWED
             kwargs.update(
@@ -873,10 +937,25 @@ class VpnConfiguratorApp(ctk.CTk):
         return kwargs
 
     def _allowed_ips_for_client(self, ips: list[str], source: str) -> list[str]:
-        """У WireGuard под Android нет ключа исключений, поэтому в режиме «весь трафик»
-        адрес сервера вычитается прямо из AllowedIPs — иначе трафик к сервисам на том же
-        сервере уходил бы в туннель и возвращался на него же."""
-        if self.wg_client.get() != CLIENT_ANDROID or self.wg_route.get() != "all":
+        """Исключения, выразимые только самим списком AllowedIPs, — такой конфиг без правок
+        понимают Amnezia и другие клиенты без ключа DisallowedIPs. Для классического WireGuard
+        список не дробится: killswitch работает только при ровно 0.0.0.0/0."""
+        client = self.wg_client.get()
+        if client == CLIENT_WIRESOCK:
+            if self.wg_exclude_lan.get():
+                ips = exclude_ips(ips, LAN_EXCLUDE_IPS)
+            if self.wg_cut_ips.get() and self.wg_disallowed_ips.paths:
+                ips = exclude_ips(ips, self._collect_ips_cached(self.wg_disallowed_ips.paths))
+        if client != CLIENT_WIREGUARD:
+            neighbour = self.wg_neighbour_conf.get()
+            if neighbour:
+                holes = read_allowed_ips(neighbour)
+                endpoint = read_endpoint_ip(neighbour)
+                if endpoint:
+                    holes = merge_unique(holes, [endpoint])
+                if holes:
+                    ips = exclude_ips(ips, holes)
+        if client != CLIENT_ANDROID or self.wg_route.get() != "all":
             return ips
         endpoint = read_endpoint_ip(source)
         return exclude_ips(ips, [endpoint]) if endpoint else ips
@@ -928,15 +1007,22 @@ class VpnConfiguratorApp(ctk.CTk):
             self._ips_cache.pop(next(iter(self._ips_cache)))
 
     def _generate_wg_conf(self) -> tuple[str, int]:
-        """Единый конвейер генерации WG-конфига для предпросмотра и сохранения."""
+        """Единый конвейер генерации WG-конфига для предпросмотра и сохранения.
+        Режим списка без добавленных файлов даёт конфиг с исходным AllowedIPs:
+        предпросмотр показывает отправную точку, а не пустую заглушку."""
         src = self.wg_src.get()
-        self._require(src, "gui_err_need_conf")
+        if not src:
+            raise FormIncompleteError(tr("gui_err_need_conf"))
         self._sync_keepalive_field(src)
         if self.wg_route.get() == "all":
             ips = list(ALL_TRAFFIC_IPS)
-        else:
-            self._require(self.wg_files.paths, "gui_err_need_files")
+        elif self.wg_route.get() == "keep":
+            ips = read_allowed_ips(src)
+            self._require(ips, "gui_err_no_keep_ips")
+        elif self.wg_files.paths:
             ips = self._collect_ips_cached(self.wg_files.paths)
+        else:
+            ips = read_allowed_ips(src, include_catch_all=True)
         text = build_wireguard_conf(
             self._allowed_ips_for_client(ips, src),
             src,
@@ -946,7 +1032,8 @@ class VpnConfiguratorApp(ctk.CTk):
         return text, len(ips)
 
     def _generate_merge_text(self) -> tuple[str, int]:
-        self._require(self.merge_files.paths, "gui_err_need_files")
+        if not self.merge_files.paths:
+            raise FormIncompleteError(tr("gui_err_need_files"))
         ips = self._collect_ips_cached(self.merge_files.paths)
         output_format = OUTPUT_FORMATS[self.merge_format.get()]
         return output_format.formatter(ips), len(ips)
@@ -1007,17 +1094,19 @@ class VpnConfiguratorApp(ctk.CTk):
         )
 
     def _build_merge_page(self) -> None:
-        page = self._create_page("merge", "gui_merge_title", "gui_merge_subtitle")
+        page = self._create_page("merge")
 
+        files_card = self._build_card(page, 0, "gui_files_label", "gui_hint_ip_files")
         self.merge_files = FileListPicker(
-            page, self, "gui_files_label", "gui_hint_ip_files", self._ip_filetypes, list_height=210
+            files_card, self, None, "gui_hint_ip_files", self._ip_filetypes
         )
-        self.merge_files.grid(row=2, column=0, sticky="ew", pady=3)
+        self.merge_files.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
         self._file_lists.append(self.merge_files)
 
+        output_card = self._build_card(page, 1, "gui_card_output")
         self.merge_format = ctk.StringVar(value="plaintext")
-        format_frame = ctk.CTkFrame(page, fg_color="transparent")
-        format_frame.grid(row=3, column=0, sticky="w", pady=(6, 2))
+        format_frame = ctk.CTkFrame(output_card, fg_color="transparent")
+        format_frame.grid(row=1, column=0, sticky="w", padx=12, pady=(2, 0))
         format_label = ctk.CTkLabel(format_frame)
         format_label.grid(row=0, column=0, padx=(0, 12))
         self.register_i18n(format_label, "gui_out_format")
@@ -1029,10 +1118,10 @@ class VpnConfiguratorApp(ctk.CTk):
             radio.grid(row=0, column=column, padx=(0, 12))
             self.register_i18n(radio, label_key)
 
-        self.merge_dst = FilePickerRow(page, self, "gui_new_file", "save", self._merge_save_options)
-        self.merge_dst.grid(row=4, column=0, sticky="ew", pady=3)
+        self.merge_dst = FilePickerRow(output_card, self, "gui_new_file", "save", self._merge_save_options)
+        self.merge_dst.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 0))
 
-        self._create_run_button(page, 5, "gui_run_merge", self._run_merge)
+        self._create_run_button(output_card, 3, "gui_run_merge", self._run_merge)
 
     def _merge_save_options(self) -> dict:
         format_key = self.merge_format.get()
@@ -1102,14 +1191,22 @@ class VpnConfiguratorApp(ctk.CTk):
         self._preview_textbox().yview_scroll(direction * max(1, abs(event.delta) // 40), "units")
         return "break"
 
-    def _on_preview_focus(self, _event) -> None:
+    def _on_preview_key(self, event) -> None:
+        """Убирает placeholder только при начале ввода (печатный символ или вставка), а не по
+        клику и не по Ctrl+C/Ctrl+A: текст placeholder содержит причину ошибки, и её должно
+        быть можно прочитать, выделить и скопировать."""
+        if event.char and event.char.isprintable():
+            self._clear_placeholder()
+
+    def _clear_placeholder(self) -> None:
         if self._preview_is_placeholder:
             self.preview_box.delete("1.0", "end")
+            self.preview_box.configure(wrap="none")
             self._preview_textbox().edit_modified(False)
             self._preview_is_placeholder = False
 
     def _on_preview_focus_out(self, _event) -> None:
-        """Возвращает подсказку, если пользователь кликнул в пустой предпросмотр и ушёл без ввода."""
+        """Возвращает подсказку, если пользователь опустошил предпросмотр и ушёл без ввода."""
         if not self._preview_dirty and not self.preview_box.get("1.0", "end-1c").strip():
             self._refresh_preview()
 
@@ -1137,26 +1234,31 @@ class VpnConfiguratorApp(ctk.CTk):
 
     def _refresh_preview(self) -> None:
         """Перестраивает предпросмотр из полей формы: последнее изменение выигрывает —
-        правка формы обновляет текст, ручная правка текста живёт до следующей правки формы."""
+        правка формы обновляет текст, ручная правка текста живёт до следующей правки формы.
+        Незаполненная форма и битые входные файлы дают placeholder с причиной, без модальных окон."""
         self._cancel_preview_job()
         if self.current_page == "wireguard":
-            text = self._safe_preview(self._generate_wg_conf)
+            self._update_keep_radio_state()
+            generate = self._generate_wg_conf
         else:
-            text = self._safe_preview(self._generate_merge_text)
-        self._set_preview(text)
-
-    def _safe_preview(self, generate: Callable[[], tuple[str, int]]) -> str | None:
-        """Незаполненная форма и битые входные файлы дают placeholder без модальных окон —
-        причина всплывёт понятной ошибкой при нажатии кнопки сохранения."""
+            generate = self._generate_merge_text
         try:
-            return generate()[0]
-        except Exception:
-            return None
+            text = generate()[0]
+        except FormIncompleteError:
+            self._set_preview(None)
+        except Exception as exc:
+            self._set_preview(None, reason=self._error_message(exc))
+        else:
+            self._set_preview(text)
 
-    def _set_preview(self, text: str | None) -> None:
+    def _set_preview(self, text: str | None, reason: str | None = None) -> None:
         self.preview_box.delete("1.0", "end")
+        self.preview_box.configure(wrap="word" if text is None else "none")
         if text is None:
-            self.preview_box.insert("1.0", tr("gui_preview_placeholder"), "placeholder")
+            placeholder = tr("gui_preview_placeholder")
+            if reason:
+                placeholder += "\n\n" + tr("gui_preview_error").format(error=reason)
+            self.preview_box.insert("1.0", placeholder, "placeholder")
             self._preview_is_placeholder = True
         else:
             self.preview_box.insert("1.0", text)
