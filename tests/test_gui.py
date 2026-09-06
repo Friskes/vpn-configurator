@@ -138,7 +138,7 @@ def test_disallowed_ips_holds_paths_not_values(app, tmp_path, wg_conf, ips_file)
     app._on_wg_client_change()
     app.wg_src.set(str(wg_conf))
     app.wg_files.add_paths([str(ips_file)])
-    app.wg_exclude_lan.set(True)
+    app.wg_cut_ips.set(False)
     app.wg_disallowed_ips.add_paths([str(local)])
     assert app.wg_disallowed_ips.paths == [str(local)]
 
@@ -150,8 +150,8 @@ def test_disallowed_ips_holds_paths_not_values(app, tmp_path, wg_conf, ips_file)
 
 
 def test_exclude_lan_checkbox(app, tmp_path, wg_conf):
-    """Чекбокс по умолчанию выключен; включение вырезает LAN-диапазоны из самого AllowedIPs
-    вместо записи DisallowedIPs — конфиг остаётся совместимым с Amnezia."""
+    """Чекбокс включён по умолчанию и вырезает LAN-диапазоны из самого AllowedIPs
+    вместо записи DisallowedIPs; выключение возвращает адреса как есть."""
     mixed = tmp_path / "mixed.txt"
     mixed.write_text("8.8.8.8, 192.168.50.0/24\n", encoding="utf-8")
 
@@ -161,16 +161,16 @@ def test_exclude_lan_checkbox(app, tmp_path, wg_conf):
     app.wg_files.add_paths([str(mixed)])
     app._refresh_preview()
     app.update()
-    assert "192.168.50.0/24" in app.preview_box.get("1.0", "end")
-
-    app.wg_exclude_lan.set(True)
-    app._refresh_preview()
-    app.update()
     preview = app.preview_box.get("1.0", "end")
     assert "8.8.8.8" in preview
     assert "192.168.50.0/24" not in preview
     assert "DisallowedIPs" not in preview
     assert "DisallowedApps" not in preview
+
+    app.wg_exclude_lan.set(False)
+    app._refresh_preview()
+    app.update()
+    assert "192.168.50.0/24" in app.preview_box.get("1.0", "end")
 
 
 def test_exclude_lan_keeps_ips_in_whitelist_mode(app, tmp_path, wg_conf):
@@ -254,6 +254,59 @@ def test_route_keep_takes_source_subnets(app, tmp_path):
     assert "0.0.0.0/0" not in preview
 
 
+def test_preview_shows_default_config_without_ip_files(app, wg_conf):
+    """Без добавленных IP-файлов предпросмотр показывает конфиг с исходным AllowedIPs,
+    а не пустую заглушку с ошибкой."""
+    app.wg_src.set(str(wg_conf))
+    app._refresh_preview()
+    app.update()
+    assert not app._preview_is_placeholder
+    assert "AllowedIPs = 0.0.0.0/0" in app.preview_box.get("1.0", "end")
+
+
+def test_merge_preview_placeholder_without_files(app):
+    """Страница объединения без файлов показывает однострочный placeholder без причины."""
+    app._select_page("merge")
+    app._refresh_preview()
+    app.update()
+    assert app._preview_is_placeholder
+    assert "\n" not in app.preview_box.get("1.0", "end").strip()
+
+
+def test_empty_form_placeholder_is_single_line(app):
+    """Незаполненная форма: placeholder не дублирует «заполните форму» причиной ошибки."""
+    app._refresh_preview()
+    app.update()
+    assert app._preview_is_placeholder
+    assert "\n" not in app.preview_box.get("1.0", "end").strip()
+
+
+def test_keep_radio_disabled_when_nothing_to_keep(app, wg_conf):
+    """Конфиг с одним catch-all в AllowedIPs: радио «адреса исходника» гаснет, выбор
+    сбрасывается на список, предпросмотр показывает конфиг вместо ошибки."""
+    app.wg_src.set(str(wg_conf))
+    app.wg_route.set("keep")
+    app._refresh_preview()
+    app.update()
+    assert app.wg_route_keep_radio.cget("state") == "disabled"
+    assert app.wg_route.get() == "listed"
+    assert not app._preview_is_placeholder
+
+
+def test_keep_radio_enabled_with_specific_ips(app, tmp_path):
+    """Конфиг с конкретными адресами: радио «адреса исходника» доступно."""
+    src = tmp_path / "corp.conf"
+    src.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+        "AllowedIPs = 10.100.0.0/22, 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(src))
+    app._refresh_preview()
+    app.update()
+    assert app.wg_route_keep_radio.cget("state") == "normal"
+
+
 def test_neighbour_conf_subtracted(app, tmp_path, wg_conf):
     """Подсети и Endpoint соседнего VPN вычитаются из AllowedIPs генерируемого конфига."""
     app.wg_client.set(vpn_gui.CLIENT_WIRESOCK)
@@ -283,7 +336,8 @@ def test_neighbour_conf_ignored_for_classic_client(app, tmp_path, wg_conf):
 
 
 def test_cut_ips_mode_carves_allowed_ips(app, tmp_path, wg_conf):
-    """Режим вырезания: ручной список исключений уходит из AllowedIPs, ключ DisallowedIPs не пишется."""
+    """Режим вырезания (включён по умолчанию): ручной список исключений уходит из AllowedIPs,
+    ключ DisallowedIPs не пишется."""
     reserve = tmp_path / "reserve.txt"
     reserve.write_text("10.0.0.0/8\n", encoding="utf-8")
 
@@ -293,7 +347,6 @@ def test_cut_ips_mode_carves_allowed_ips(app, tmp_path, wg_conf):
     app.wg_route.set("all")
     app._on_wg_route_change()
     app.wg_disallowed_ips.add_paths([str(reserve)])
-    app.wg_cut_ips.set(True)
     app._refresh_preview()
     app.update()
     preview = app.preview_box.get("1.0", "end")
@@ -526,7 +579,7 @@ def test_run_reports_os_error_dialog(app, tmp_path, wg_conf, ips_file, dialogs):
 
 
 def test_bad_file_error_surfaces_on_run(app, tmp_path, wg_conf, dialogs):
-    """Битый файл: предпросмотр молча пуст, а причина всплывает окном при сохранении."""
+    """Битый файл: placeholder предпросмотра показывает причину, окно с ошибкой — при сохранении."""
     bad = tmp_path / "bad.txt"
     bad.write_bytes("# список\n8.8.8.8\n".encode("cp1251"))
     app.wg_src.set(str(wg_conf))
@@ -534,6 +587,7 @@ def test_bad_file_error_surfaces_on_run(app, tmp_path, wg_conf, dialogs):
     app._refresh_preview()
     app.update()
     assert app._preview_is_placeholder
+    assert "кодировк" in app.preview_box.get("1.0", "end").lower()
 
     app.wg_dst.set(str(tmp_path / "out.conf"))
     app._execute(app._run_wireguard)
@@ -740,9 +794,13 @@ def test_syntax_highlight_skipped_on_huge_text(app):
     assert not app._preview_textbox().tag_ranges("number")
 
 
-def test_placeholder_restored_after_focus_without_input(app):
+def test_placeholder_cleared_on_typing_restored_on_leave(app):
+    """Placeholder с причиной ошибки переживает клик (текст можно прочитать и выделить),
+    очищается началом ввода и возвращается после ухода без ввода."""
     assert app._preview_is_placeholder
-    app._on_preview_focus(None)
+    app._on_preview_key(types.SimpleNamespace(char="", keysym="Left"))
+    assert app._preview_is_placeholder
+    app._on_preview_key(types.SimpleNamespace(char="a", keysym="a"))
     app.update()
     assert not app._preview_is_placeholder
     app._on_preview_focus_out(None)
@@ -793,6 +851,21 @@ def test_ips_cache_invalidated_on_file_change(app, tmp_path):
     stat = os_module.stat(file)
     os_module.utime(file, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
     assert app._collect_ips_cached([str(file)]) == ["1.1.1.1"]
+
+
+def test_file_picker_clear_button(app, wg_conf):
+    """Крестик очищает путь; placeholder поля и предпросмотр возвращаются."""
+    app.wg_src.set(str(wg_conf))
+    app._refresh_preview()
+    app.update()
+    assert not app._preview_is_placeholder
+
+    app.wg_src.clear()
+    app._refresh_preview()
+    app.update()
+    assert app.wg_src.get() == ""
+    assert app.wg_src.entry._placeholder_text_active
+    assert app._preview_is_placeholder
 
 
 def test_quoted_path_stripped(app):
