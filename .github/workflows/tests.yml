@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_call:
 
+env:
+  UV_PYTHON_PREFERENCE: only-system
+
 jobs:
   test:
     strategy:
@@ -14,12 +17,15 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Run tests
-        run: uv run --frozen pytest tests/ -v
+        run: uv run --frozen pytest tests/ -v -rs

@@ -111,7 +111,7 @@ Each folder has an `all.txt` — the combined list: `DisallowedApps/` and `Exclu
    > xattr -dr com.apple.quarantine ~/Downloads/vpn_configurator.app
    > ```
    >
-   > Or: right-click the `.app` → "Open" → "Open" in the dialog.
+   > Or: try to open the `.app`, close the warning, then click "Open Anyway" in System Settings → Privacy & Security.
 
 > The former interactive terminal (CLI) version of the program is available in older releases — up to [v0.2.3](https://github.com/Friskes/vpn-configurator/releases/tag/v0.2.3) inclusive.
 
@@ -132,7 +132,7 @@ uv run python vpn_configurator.py
 uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 ```
 
-The `-w` flag builds without a console window: on Windows it's an `.exe`, on macOS a `dist/vpn_configurator.app` bundle (launches on double-click, no terminal).
+The `-w` flag builds without a console window: on Windows it's an `.exe`. On macOS replace `-F` with `-D` to get a `dist/vpn_configurator.app` bundle that launches on double-click, no terminal (PyInstaller has deprecated one-file `.app` bundles).
 
 ---
 

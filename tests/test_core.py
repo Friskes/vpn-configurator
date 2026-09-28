@@ -229,8 +229,9 @@ class TestAppNames:
             "/Applications/Foo.app",
         ]
 
-    def test_exe_gives_stem(self):
-        assert core.collect_app_names([r"C:\Program Files\Google\Chrome\chrome.exe"]) == ["chrome"]
+    def test_exe_gives_stem(self, tmp_path):
+        """Путь приходит из перетаскивания или диалога, то есть всегда в формате текущей ОС."""
+        assert core.collect_app_names([tmp_path / "Google" / "Chrome" / "chrome.exe"]) == ["chrome"]
 
     def test_binary_without_extension_gives_stem(self, tmp_path):
         """Бинарь другой ОС не декодируется как текст — именем становится имя файла."""

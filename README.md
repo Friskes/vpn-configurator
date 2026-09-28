@@ -111,7 +111,7 @@
    > xattr -dr com.apple.quarantine ~/Downloads/vpn_configurator.app
    > ```
    >
-   > Либо: правый клик по `.app` → «Открыть» → «Открыть» в диалоге.
+   > Либо: попробуйте открыть `.app`, закройте предупреждение и нажмите «Всё равно открыть» в «Системные настройки» → «Конфиденциальность и безопасность».
 
 > Прежняя интерактивная терминальная (CLI) версия программы доступна в старых релизах — до [v0.2.3](https://github.com/Friskes/vpn-configurator/releases/tag/v0.2.3) включительно.
 
@@ -132,7 +132,7 @@ uv run python vpn_configurator.py
 uv run pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 ```
 
-Флаг `-w` собирает без окна консоли: на Windows это `.exe`, на macOS — бандл `dist/vpn_configurator.app` (запускается двойным кликом без терминала).
+Флаг `-w` собирает без окна консоли: на Windows это `.exe`. На macOS замените `-F` на `-D` — получится бандл `dist/vpn_configurator.app`, который запускается двойным кликом без терминала (однофайловый `.app` PyInstaller считает устаревшим).
 
 ---
 
