@@ -1,0 +1,6 @@
+# Discord (Windows)
+discord
+# Telegram Desktop (Windows)
+telegram
+# WhatsApp (Windows)
+whatsapp

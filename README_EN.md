@@ -25,18 +25,18 @@
 **1. WireGuard config (Amnezia / WireSock / WireGuard)**
 Based on an existing `.conf` file, creates a new config with IP addresses for split tunneling:
 
-- only the specified IP addresses — taken from address files;
+- only the specified IP addresses — taken from address files; the DNS servers from the source `[Interface]` are added to them, otherwise a DNS server that lives inside the tunnel (`100.64.0.1` for Amnezia Premium) stops answering;
 - or all traffic (`0.0.0.0/0`);
 - or the addresses already present in the source config with the `0.0.0.0/0` dropped — handy when the issued config lists the needed subnets but ends with a catch-all tail and therefore pulls all traffic;
 - **Classic WireGuard** (WireGuard, Amnezia and compatible clients) — a config with no non-standard keys;
 - **WireSock** — adds obfuscation (masks WireGuard traffic from DPI) plus extra filters: excluding IP addresses from the tunnel (`DisallowedIPs`) and an app blacklist or whitelist (`DisallowedApps` / `AllowedApps`). Into the app list you can drop an executable of any OS (`.exe`, a macOS/Linux binary, `.app`) — the file name becomes the app name — or a text file listing app names;
 - **WireGuard for Android** — an app blacklist or whitelist by Android package name (`ExcludedApplications` / `IncludedApplications`). These two keys are understood only by WireGuard for Android and its forks (AmneziaWG, WG Tunnel) — desktop clients reject such a config with an `Invalid key` error, which is why the mode is a separate option.
 
-**Two VPNs side by side.** If a second tunnel runs in parallel (e.g. a corporate one), point the app at its `.conf` — its server address and its specific subnets get subtracted from the generated config's `AllowedIPs`. Without that, the second VPN's packets get wrapped inside the first tunnel (the double wrapping doesn't fit the MTU — websites work intermittently) and its subnets get hijacked. LAN exclusions and manual exclusion lists can be carved directly out of `AllowedIPs` — such a config is understood by any client, including Amnezia, which has no `DisallowedIPs` key.
+**Two VPNs side by side.** If a second tunnel runs in parallel (e.g. a corporate one), point the app at its `.conf` — its server address and its specific subnets get subtracted from the generated config's `AllowedIPs`. Without that, the second VPN's packets get wrapped inside the first tunnel (the double wrapping doesn't fit the MTU — websites work intermittently) and its subnets get hijacked. LAN exclusions and manual exclusion lists can be carved directly out of `AllowedIPs` — such a config is understood by any client, including Amnezia, which has no `DisallowedIPs` key. For classic WireGuard for Windows this turns the killswitch off: it fires on any `/0` in `AllowedIPs` and would block the neighbour VPN, which is also why `::/0` is replaced with `::/1, 8000::/1`.
 
 In the **"tunnel all traffic"** mode the VPN server address from `Endpoint` is excluded from the tunnel automatically. The point: services hosted on that same server (a panel, your own RustDesk, a proxy) stay reachable directly instead of taking a hairpin through the tunnel. WireSock simply gets the address appended to `DisallowedIPs`; Android has no such key, so `0.0.0.0/0` is replaced with a list of ranges that leaves the server address out. A domain name in `Endpoint` is not resolved — the server address may change, and a one-off resolution baked into the config would become wrong.
 
-For every client there is a **`PersistentKeepalive`** field (in seconds) — it keeps the NAT mapping alive so the server can reach the client back. The field is prefilled from the source config, and with the WireGuard-recommended `25` when the key is missing or set to `0`. You can change the value before generating, and an empty field leaves the key exactly as it was in the source.
+For every client there is a **`PersistentKeepalive`** field (in seconds) — it keeps the NAT mapping alive so the server can reach the client back. The field is prefilled from the source config, and with the WireGuard-recommended `25` when the key is missing or set to `0`. A range such as `25-35` from AmneziaWG 3.x configs is kept as is. You can change the value before generating, and an empty field leaves the key exactly as it was in the source.
 
 **2. Merge / convert IP address files**
 Merges multiple files into one, removing duplicates and invalid addresses. Input files — in any mix, the format is detected automatically, the extension does not matter:
@@ -78,10 +78,11 @@ More sets — in the [Where to get IP addresses](#where-to-get-ip-addresses) sec
 
 | Folder | Purpose |
 |---|---|
-| `DisallowedApps/` | App names for the WireSock filter (`DisallowedApps` / `AllowedApps`) |
+| `DisallowedApps/` | App names for the WireSock blacklist (`DisallowedApps`) |
+| `AllowedApps/` | App names for the WireSock whitelist (`AllowedApps`) |
 | `ExcludedApplications/` | Android package names for WireGuard for Android (`ExcludedApplications` / `IncludedApplications`) |
 
-Each folder has an `all.txt` — the combined list; currently it contains RustDesk.
+Each folder has an `all.txt` — the combined list: `DisallowedApps/` and `ExcludedApplications/` currently contain RustDesk, `AllowedApps/` — Discord, Telegram and WhatsApp.
 
 ---
 

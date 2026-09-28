@@ -539,6 +539,24 @@ class TestReadAllowedIps:
         assert core.read_allowed_ips(conf) == []
 
 
+class TestReadDnsIps:
+    def test_ipv4_only(self, tmp_path):
+        """Поисковые домены и IPv6-серверы в DNS не годятся в AllowedIPs режима списка."""
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\nDNS = 100.64.0.1, 2606:4700::1111, corp.local, 8.8.4.4\n"
+            "\n[Peer]\nPublicKey = def\n",
+            encoding="utf-8",
+        )
+        assert core.read_dns_ips(conf) == ["100.64.0.1", "8.8.4.4"]
+
+    def test_without_dns_key(self, wg_conf):
+        assert core.read_dns_ips(wg_conf) == []
+
+    def test_missing_file(self, tmp_path):
+        assert core.read_dns_ips(tmp_path / "nope.conf") == []
+
+
 class TestExcludeIps:
     def test_single_host_removed_from_default_route(self):
         result = core.exclude_ips(["0.0.0.0/0"], ["185.22.174.53"])
@@ -578,6 +596,15 @@ class TestExcludeIps:
         assert "10.1.0.0/16" not in result
         assert "10.2.0.0/16" not in result
         assert "10.0.0.0/16" in result
+
+
+class TestSplitIpv6CatchAll:
+    def test_catch_all_becomes_halves(self):
+        assert core.split_ipv6_catch_all(["0.0.0.0/5", "::/0"]) == ["0.0.0.0/5", "::/1", "8000::/1"]
+
+    def test_other_values_untouched(self):
+        values = ["0.0.0.0/0", "2000::/3", "не адрес"]
+        assert core.split_ipv6_catch_all(values) == values
 
 
 @pytest.fixture
@@ -655,20 +682,34 @@ class TestPersistentKeepalive:
         assert "PersistentKeepalive = 25" in text
         assert text.lower().count("persistentkeepalive") == 1
 
+    def test_range_written_as_is(self, wg_conf):
+        assert "PersistentKeepalive = 25-35" in build(["8.8.8.8"], wg_conf, keepalive="25-35")
+
     def test_read_missing_key(self, wg_conf):
         assert core.read_persistent_keepalive(wg_conf) is None
 
-    @pytest.mark.parametrize("value", ["0", "abc", "", "-5", "99999"])
+    @pytest.mark.parametrize("value", ["0", "0-0", "abc", "", "-5", "99999", "35-25"])
     def test_read_unusable_values_are_none(self, android_conf, value):
         conf = android_conf(peer_extra=f"PersistentKeepalive = {value}\n")
         assert core.read_persistent_keepalive(conf) is None
 
     def test_read_existing_value(self, android_conf):
         conf = android_conf(peer_extra="persistentkeepalive = 15\n")
-        assert core.read_persistent_keepalive(conf) == 15
+        assert core.read_persistent_keepalive(conf) == "15"
+
+    def test_read_awg_range(self, android_conf):
+        conf = android_conf(peer_extra="PersistentKeepalive = 25-35\n")
+        assert core.read_persistent_keepalive(conf) == "25-35"
 
     def test_read_missing_file(self, tmp_path):
         assert core.read_persistent_keepalive(tmp_path / "nope.conf") is None
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(" 25 ", "25"), ("0", "0"), ("25-35", "25-35"), ("35-25", None), ("25-", None), ("65536", None)],
+    )
+    def test_parse(self, value, expected):
+        assert core.parse_keepalive(value) == expected
 
 
 class TestValidateWireguardText:
@@ -714,15 +755,16 @@ class TestValidateWireguardText:
         )
         assert problems
 
-    @pytest.mark.parametrize("value", ["abc", "-5", "99999"])
+    @pytest.mark.parametrize("value", ["abc", "-5", "99999", "35-25"])
     def test_invalid_keepalive_flagged(self, value):
         problems = core.validate_wireguard_text(
             f"[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\nPersistentKeepalive = {value}\n"
         )
         assert any(value in p for p in problems)
 
-    def test_valid_keepalive_accepted(self):
-        text = "[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\nPersistentKeepalive = 25\n"
+    @pytest.mark.parametrize("value", ["25", "25-35"])
+    def test_valid_keepalive_accepted(self, value):
+        text = f"[Interface]\nPrivateKey = a\n[Peer]\nAllowedIPs = 8.8.8.8\nPersistentKeepalive = {value}\n"
         assert core.validate_wireguard_text(text) == []
 
 
