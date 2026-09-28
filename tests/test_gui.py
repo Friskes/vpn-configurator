@@ -323,16 +323,39 @@ def test_neighbour_conf_subtracted(app, tmp_path, wg_conf):
     assert "5.5.5.4/32" in preview
 
 
-def test_neighbour_conf_ignored_for_classic_client(app, tmp_path, wg_conf):
-    """Классический WireGuard: AllowedIPs не дробится даже с указанным соседним конфигом
-    (killswitch требует ровно 0.0.0.0/0)."""
+def test_neighbour_conf_splits_classic_client(app, tmp_path, wg_conf):
+    """Классический WireGuard с соседним VPN: подсети соседа вырезаны, и ни одного /0 —
+    иначе killswitch WireGuard для Windows заблокировал бы соседа; IPv6 уходит половинами."""
+    assert app.wg_neighbour_conf.winfo_ismapped()
     app.wg_src.set(str(wg_conf))
     app.wg_route.set("all")
     app._on_wg_route_change()
     app.wg_neighbour_conf.set(str(_neighbour_conf(tmp_path)))
     app._refresh_preview()
     app.update()
-    assert "AllowedIPs = 0.0.0.0/0" in app.preview_box.get("1.0", "end")
+    allowed = next(
+        line for line in app.preview_box.get("1.0", "end").splitlines()
+        if line.startswith("AllowedIPs")
+    )
+    assert "10.100.4.0/22" in allowed
+    assert "10.100.0.0/22" not in allowed
+    assert "/0," not in allowed
+    assert allowed.endswith("::/1, 8000::/1")
+
+
+def test_listed_mode_routes_source_dns(app, tmp_path, ips_file):
+    """Режим списка: DNS из [Interface] попадает в AllowedIPs — у Amnezia он живёт в туннеле."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\nDNS = 100.64.0.1, 8.8.4.4\n\n[Peer]\nPublicKey = def\n"
+        "AllowedIPs = 0.0.0.0/0, ::/0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert "AllowedIPs = 8.8.8.8, 1.1.1.0/24, 100.64.0.1, 8.8.4.4" in app.preview_box.get("1.0", "end")
 
 
 def test_cut_ips_mode_carves_allowed_ips(app, tmp_path, wg_conf):
@@ -427,6 +450,21 @@ def test_keepalive_seeded_from_source_config(app, tmp_path, wg_conf, ips_file):
     app.update()
     assert app.wg_keepalive.get() == "15"
     assert "PersistentKeepalive = 15" in app.preview_box.get("1.0", "end")
+
+
+def test_keepalive_awg_range_preserved(app, tmp_path, ips_file):
+    """Диапазон AmneziaWG 3.x не должен схлопываться в дефолтные 25 при генерации."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\nPersistentKeepalive = 25-35\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert app.wg_keepalive.get() == "25-35"
+    assert "PersistentKeepalive = 25-35" in app.preview_box.get("1.0", "end")
 
 
 def test_keepalive_empty_field_keeps_source_value(app, tmp_path, ips_file):

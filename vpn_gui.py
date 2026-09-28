@@ -14,7 +14,6 @@ from vpn_configurator import (
     ALL_TRAFFIC_IPS,
     DEFAULT_KEEPALIVE,
     LAN_EXCLUDE_IPS,
-    MAX_KEEPALIVE,
     OUTPUT_FORMATS,
     VpnConfiguratorError,
     build_wireguard_conf,
@@ -23,9 +22,12 @@ from vpn_configurator import (
     exclude_ips,
     merge_unique,
     parse_app_names,
+    parse_keepalive,
     read_allowed_ips,
+    read_dns_ips,
     read_endpoint_ip,
     read_persistent_keepalive,
+    split_ipv6_catch_all,
     validate_amnezia_text,
     validate_wireguard_text,
 )
@@ -900,10 +902,6 @@ class VpnConfiguratorApp(ctk.CTk):
                 frame.grid()
             else:
                 frame.grid_remove()
-        if client == CLIENT_WIREGUARD:
-            self.wg_neighbour_conf.grid_remove()
-        else:
-            self.wg_neighbour_conf.grid()
         self.schedule_preview()
 
     def _wg_client_kwargs(self) -> dict:
@@ -938,35 +936,33 @@ class VpnConfiguratorApp(ctk.CTk):
 
     def _allowed_ips_for_client(self, ips: list[str], source: str) -> list[str]:
         """Исключения, выразимые только самим списком AllowedIPs, — такой конфиг без правок
-        понимают Amnezia и другие клиенты без ключа DisallowedIPs. Для классического WireGuard
-        список не дробится: killswitch работает только при ровно 0.0.0.0/0."""
+        понимают Amnezia и другие клиенты без ключа DisallowedIPs. Классический WireGuard
+        дробится только ради соседнего VPN: killswitch при любом /0 заблокировал бы соседа."""
         client = self.wg_client.get()
         if client == CLIENT_WIRESOCK:
             if self.wg_exclude_lan.get():
                 ips = exclude_ips(ips, LAN_EXCLUDE_IPS)
             if self.wg_cut_ips.get() and self.wg_disallowed_ips.paths:
                 ips = exclude_ips(ips, self._collect_ips_cached(self.wg_disallowed_ips.paths))
-        if client != CLIENT_WIREGUARD:
-            neighbour = self.wg_neighbour_conf.get()
-            if neighbour:
-                holes = read_allowed_ips(neighbour)
-                endpoint = read_endpoint_ip(neighbour)
-                if endpoint:
-                    holes = merge_unique(holes, [endpoint])
-                if holes:
-                    ips = exclude_ips(ips, holes)
+        neighbour = self.wg_neighbour_conf.get()
+        if neighbour:
+            holes = read_allowed_ips(neighbour)
+            endpoint = read_endpoint_ip(neighbour)
+            if endpoint:
+                holes = merge_unique(holes, [endpoint])
+            if holes:
+                ips = exclude_ips(ips, holes)
+                if client == CLIENT_WIREGUARD:
+                    ips = split_ipv6_catch_all(ips)
         if client != CLIENT_ANDROID or self.wg_route.get() != "all":
             return ips
         endpoint = read_endpoint_ip(source)
         return exclude_ips(ips, [endpoint]) if endpoint else ips
 
-    def _keepalive_value(self) -> int | None:
-        """Число из поля PersistentKeepalive; пустое или неподходящее значение означает
-        «не трогать ключ», а не ошибку: предпросмотр должен строиться и во время набора."""
-        text = self.wg_keepalive.get().strip()
-        if not text.isdigit() or int(text) > MAX_KEEPALIVE:
-            return None
-        return int(text)
+    def _keepalive_value(self) -> str | None:
+        """Число или диапазон из поля PersistentKeepalive; пустое или неподходящее значение
+        означает «не трогать ключ», а не ошибку: предпросмотр должен строиться и во время набора."""
+        return parse_keepalive(self.wg_keepalive.get())
 
     def _sync_keepalive_field(self, source: str) -> None:
         """Подставляет в поле значение из выбранного конфига, а если ключа нет или он нулевой —
@@ -1014,17 +1010,20 @@ class VpnConfiguratorApp(ctk.CTk):
         if not src:
             raise FormIncompleteError(tr("gui_err_need_conf"))
         self._sync_keepalive_field(src)
+        dns_ips: list[str] = []
         if self.wg_route.get() == "all":
             ips = list(ALL_TRAFFIC_IPS)
         elif self.wg_route.get() == "keep":
             ips = read_allowed_ips(src)
             self._require(ips, "gui_err_no_keep_ips")
+            dns_ips = read_dns_ips(src)
         elif self.wg_files.paths:
             ips = self._collect_ips_cached(self.wg_files.paths)
+            dns_ips = read_dns_ips(src)
         else:
             ips = read_allowed_ips(src, include_catch_all=True)
         text = build_wireguard_conf(
-            self._allowed_ips_for_client(ips, src),
+            self._allowed_ips_for_client(merge_unique(ips, dns_ips), src),
             src,
             self.wg_client.get() == CLIENT_WIRESOCK,
             **self._wg_client_kwargs(),

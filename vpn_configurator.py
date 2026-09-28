@@ -15,6 +15,7 @@ class VpnConfiguratorError(Exception):
 
 
 ALL_TRAFFIC_IPS = ("0.0.0.0/0", "::/0")
+IPV6_HALVES = ("::/1", "8000::/1")
 COMMENT_PREFIXES = ("#", ";", "//")
 MAX_INVALID_IN_A_ROW = 30
 OBFUSCATE_KEY = "12345678901234567890123456789012"
@@ -31,6 +32,7 @@ LAN_EXCLUDE_IPS = (
 ROUTE_LINE_RE = re.compile(r"^route\b", re.IGNORECASE)
 ROUTE_ADD_RE = re.compile(r"^route\s+(?:[-/]\S+\s+)*add\s+(\S+)(?:\s+mask\s+(\S+))?", re.IGNORECASE)
 SEPARATORS_RE = re.compile(r"[,;\s]+")
+KEEPALIVE_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
 APP_SEPARATORS_RE = re.compile(r"[,;]+")
 INLINE_COMMENT_RE = re.compile(r"\s(?:#|//).*$")
 
@@ -279,6 +281,22 @@ def read_endpoint_ip(conf_path: Path | str) -> str | None:
     return _endpoint_ip(lines)
 
 
+def read_dns_ips(conf_path: Path | str) -> list[str]:
+    """IPv4-адреса из [Interface] DNS. В режиме списка их надо пустить в туннель: DNS
+    провайдера VPN часто живёт только внутри него (у Amnezia Premium — 100.64.0.1)."""
+    try:
+        lines = _read_text(Path(conf_path)).splitlines()
+    except (VpnConfiguratorError, OSError):
+        return []
+    if "interface" not in _find_sections(lines):
+        return []
+    result: list[str] = []
+    for value in _get_values(lines, "interface", "DNS"):
+        with suppress(ValueError):
+            result.append(str(ipaddress.IPv4Address(value)))
+    return result
+
+
 def read_allowed_ips(conf_path: Path | str, *, include_catch_all: bool = False) -> list[str]:
     """Адреса из [Peer] AllowedIPs существующего конфига; catch-all значения (0.0.0.0/0, ::/0)
     по умолчанию отбрасываются. Нечитаемый файл или отсутствие секции — пустой список."""
@@ -322,9 +340,39 @@ def exclude_ips(source_ips: Sequence[str], excluded_ips: Sequence[str]) -> list[
     return [str(network) for network in ipaddress.collapse_addresses(networks)] + passthrough
 
 
-def read_persistent_keepalive(conf_path: Path | str) -> int | None:
-    """Ненулевой PersistentKeepalive из [Peer] существующего конфига, иначе None.
-    Нечитаемый файл, отсутствие ключа, нечисловое значение и 0 равнозначны «не задан»."""
+def split_ipv6_catch_all(ips: Sequence[str]) -> list[str]:
+    """Заменяет ::/0 двумя половинами IPv6: трафик по-прежнему идёт в туннель, но WireGuard
+    для Windows не видит /0 и не включает killswitch, который заблокировал бы соседний VPN."""
+    result: list[str] = []
+    for value in ips:
+        try:
+            network = ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            result.append(value)
+            continue
+        if network.version == 6 and network.prefixlen == 0:
+            result.extend(IPV6_HALVES)
+        else:
+            result.append(value)
+    return result
+
+
+def parse_keepalive(value: str) -> str | None:
+    """Значение PersistentKeepalive в каноничном виде: число секунд или диапазон «мин-макс»
+    (AmneziaWG 3.x берёт из него случайный интервал). None — клиент такое не примет."""
+    match = KEEPALIVE_RE.match(value.strip())
+    if not match:
+        return None
+    low = int(match.group(1))
+    if match.group(2) is None:
+        return str(low) if low <= MAX_KEEPALIVE else None
+    high = int(match.group(2))
+    return f"{low}-{high}" if low <= high <= MAX_KEEPALIVE else None
+
+
+def read_persistent_keepalive(conf_path: Path | str) -> str | None:
+    """Ненулевой PersistentKeepalive из [Peer] существующего конфига (число или диапазон),
+    иначе None. Нечитаемый файл, отсутствие ключа, мусор и 0 равнозначны «не задан»."""
     try:
         lines = _read_text(Path(conf_path)).splitlines()
     except (VpnConfiguratorError, OSError):
@@ -332,10 +380,9 @@ def read_persistent_keepalive(conf_path: Path | str) -> int | None:
     if "peer" not in _find_sections(lines):
         return None
     for value in _get_values(lines, "peer", "PersistentKeepalive"):
-        with suppress(ValueError):
-            seconds = int(value)
-            if 0 < seconds <= MAX_KEEPALIVE:
-                return seconds
+        parsed = parse_keepalive(value)
+        if parsed is not None and parsed.rpartition("-")[2] != "0":
+            return parsed
     return None
 
 
@@ -350,7 +397,7 @@ def build_wireguard_conf(
     bypass_lan: bool = False,
     excluded_apps: Sequence[str] = (),
     included_apps: Sequence[str] = (),
-    keepalive: int | None = None,
+    keepalive: int | str | None = None,
     bypass_endpoint: bool = False,
 ) -> str:
     """Возвращает текст нового WireGuard-конфига. Правки построчные — комментарии, повторяющиеся
@@ -460,7 +507,7 @@ def validate_wireguard_text(text: str) -> list[str]:
                 if not _is_valid_ip_value(value):
                     problems.append(tr("msg_invalid_ip_in_key").format(key=key, value=value))
         for value in _get_values(lines, "peer", "PersistentKeepalive"):
-            if not value.isdigit() or int(value) > MAX_KEEPALIVE:
+            if parse_keepalive(value) is None:
                 problems.append(tr("msg_invalid_keepalive").format(value=value))
 
     return problems

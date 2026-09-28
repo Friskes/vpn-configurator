@@ -93,6 +93,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_keepalive_tooltip": (
             "Keeps the NAT mapping alive so the peer can reach the client back;\n"
             "25 is the value recommended by WireGuard.\n"
+            "AmneziaWG 3.x also accepts a range such as 25-35: the interval is picked at random.\n"
             "The field is prefilled from the source config, and with 25 when the key\n"
             "is missing or set to 0. An empty field leaves the key untouched."
         ),
@@ -116,7 +117,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_neighbour_tooltip": (
             "For when both VPNs run in the system at the same time:\n"
             "the neighbour's subnets and server address are subtracted from this config's\n"
-            "AllowedIPs so the tunnels do not fight over the same traffic."
+            "AllowedIPs so the tunnels do not fight over the same traffic.\n"
+            "Classic WireGuard for Windows then loses its killswitch — with it on,\n"
+            "the neighbour would be blocked; ::/0 becomes ::/1, 8000::/1 for the same reason."
         ),
         "gui_apps_label": "Applications:",
         "gui_apps_mode_disallowed": "Exclude these apps from the tunnel (DisallowedApps)",
@@ -255,6 +258,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_keepalive_tooltip": (
             "Держит NAT-трансляцию живой, чтобы пир мог достучаться до клиента;\n"
             "25 — рекомендованное WireGuard значение.\n"
+            "AmneziaWG 3.x понимает и диапазон вроде 25-35: интервал выбирается случайно.\n"
             "Поле заполняется значением из исходного конфига, а если ключа нет\n"
             "или он равен 0 — числом 25. Пустое поле оставляет ключ как есть."
         ),
@@ -278,7 +282,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "gui_neighbour_tooltip": (
             "На случай, когда оба VPN работают в системе одновременно:\n"
             "подсети и адрес сервера соседа вычитаются из AllowedIPs этого конфига,\n"
-            "чтобы туннели не боролись за один и тот же трафик."
+            "чтобы туннели не боролись за один и тот же трафик.\n"
+            "Классический WireGuard для Windows при этом теряет killswitch — с ним сосед\n"
+            "был бы заблокирован; по той же причине ::/0 заменяется на ::/1, 8000::/1."
         ),
         "gui_apps_label": "Приложения:",
         "gui_apps_mode_disallowed": "Исключить эти приложения из туннеля (DisallowedApps)",

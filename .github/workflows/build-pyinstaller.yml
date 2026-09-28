@@ -1,26 +1,40 @@
 name: Build PyInstaller Binaries
 
 on:
+  pull_request:
+    paths:
+      - "**.py"
+      - pyproject.toml
+      - uv.lock
+      - .python-version
+      - .github/workflows/**
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version"
+        description: "Release version without the v prefix, e.g. 0.3.2"
         required: true
+      notes:
+        description: "Release notes in Markdown; empty — generated from merged PRs"
+        required: false
       force-rebuild:
         description: "Rebuild even if the release already has all assets"
         type: boolean
         default: false
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version || 'dev' }}
+  UV_PYTHON_PREFERENCE: only-system
 
 jobs:
   test:
-    if: github.actor == 'Friskes'
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'Friskes'
     uses: ./.github/workflows/tests.yml
 
   check-release:
-    if: github.actor == 'Friskes'
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'Friskes'
     runs-on: ubuntu-latest
     outputs:
       exists: ${{ steps.check.outputs.exists }}
@@ -28,9 +42,12 @@ jobs:
       - name: Check if release already contains all assets
         id: check
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.event.inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 0.3.2, without the v prefix"
+            exit 1
+          fi
           RESPONSE=$(mktemp)
           STATUS=$(curl -s -o "$RESPONSE" -w "%{http_code}" \
             -H "Accept: application/vnd.github+json" \
@@ -58,131 +75,128 @@ jobs:
           fi
 
   build-windows:
-    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
     needs: [test, check-release]
+    if: >-
+      ${{ !cancelled() && !failure() && github.actor == 'Friskes'
+      && (needs.check-release.outputs.exists != 'true' || inputs.force-rebuild) }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Build Windows binary
+        run: uv run --frozen pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
+
+      - name: Smoke test
         run: |
-          uv run --frozen pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
+          $app = Start-Process dist\vpn_configurator.exe -PassThru
+          $null = $app.Handle
+          Start-Sleep -Seconds 30
+          if ($app.HasExited) {
+            Write-Output "::error::App exited on startup with code $($app.ExitCode)"
+            exit 1
+          }
+          taskkill /PID $app.Id /T /F
 
       - name: Rename binary with version
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-        run: |
-          mv dist/vpn_configurator.exe "vpn_configurator_v${env:VERSION}.exe"
+        run: mv dist/vpn_configurator.exe "vpn_configurator_v${env:VERSION}.exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vpn_configurator_windows
-          path: vpn_configurator_v${{ github.event.inputs.version }}.exe
+          path: vpn_configurator_v${{ env.VERSION }}.exe
+          if-no-files-found: error
 
-  build-macos-arm64:
-    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
+  build-macos:
     needs: [test, check-release]
+    if: >-
+      ${{ !cancelled() && !failure() && github.actor == 'Friskes'
+      && (needs.check-release.outputs.exists != 'true' || inputs.force-rebuild) }}
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            launcher: ""
+          - arch: x86_64
+            launcher: arch -x86_64
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Build macOS arm64 .app bundle
-        run: |
-          uv run --frozen pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
-
-      - name: Check binary architecture
-        run: |
-          file dist/vpn_configurator.app/Contents/MacOS/vpn_configurator
-
-      - name: Package .app into zip
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-        run: |
-          ditto -c -k --keepParent dist/vpn_configurator.app "vpn_configurator_v${VERSION}.macos-arm64.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vpn_configurator_macos_arm64
-          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64.zip
-
-  build-macos-x86_64:
-    if: github.actor == 'Friskes' && (needs.check-release.outputs.exists != 'true' || github.event.inputs.force-rebuild == 'true')
-    needs: [test, check-release]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - name: Install Rosetta 2
-        run: |
-          /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+        if: matrix.arch == 'x86_64'
+        run: /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+        uses: astral-sh/setup-uv@v10.2.0
 
-      - name: Install x86_64 Python
-        run: |
-          uv python install cpython-3.12-macos-x86_64
-
-      - name: Build macOS x86_64 .app bundle
-        run: |
-          uv run --frozen --python cpython-3.12-macos-x86_64 pyinstaller -w -F --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
+      - name: Build macOS ${{ matrix.arch }} .app bundle
+        run: uv run --frozen ${{ matrix.launcher }} python -m PyInstaller -w -D --collect-all customtkinter --collect-all tkinterdnd2 vpn_configurator.py
 
       - name: Check binary architecture
         run: |
-          file dist/vpn_configurator.app/Contents/MacOS/vpn_configurator
+          archs=$(lipo -archs dist/vpn_configurator.app/Contents/MacOS/vpn_configurator)
+          echo "$archs"
+          [ "$archs" = "${{ matrix.arch }}" ]
+
+      - name: Smoke test
+        run: |
+          dist/vpn_configurator.app/Contents/MacOS/vpn_configurator &
+          pid=$!
+          sleep 30
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" && code=0 || code=$?
+            echo "::error::App exited on startup with code $code"
+            exit 1
+          fi
+          kill "$pid"
 
       - name: Package .app into zip
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-        run: |
-          ditto -c -k --keepParent dist/vpn_configurator.app "vpn_configurator_v${VERSION}.macos-x86_64.zip"
+        run: ditto -c -k --keepParent dist/vpn_configurator.app "vpn_configurator_v${VERSION}.macos-${{ matrix.arch }}.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: vpn_configurator_macos_x86_64
-          path: vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64.zip
+          name: vpn_configurator_macos_${{ matrix.arch }}
+          path: vpn_configurator_v${{ env.VERSION }}.macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
 
   publish-release:
-    if: github.actor == 'Friskes'
-    needs: [build-windows, build-macos-arm64, build-macos-x86_64]
+    needs: [build-windows, build-macos]
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'Friskes'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: vpn_configurator_windows
-          path: artifacts/
-
-      - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: vpn_configurator_macos_arm64
-          path: artifacts/
-
-      - name: Download macOS x86_64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: vpn_configurator_macos_x86_64
-          path: artifacts/
+          pattern: vpn_configurator_*
+          path: artifacts
+          merge-multiple: true
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.event.inputs.version }}
-          name: Release v${{ github.event.inputs.version }}
-          files: |
-            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.exe
-            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-arm64.zip
-            artifacts/vpn_configurator_v${{ github.event.inputs.version }}.macos-x86_64.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber
+          elif [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > notes.md
+            gh release create "$TAG" artifacts/* --target "$GITHUB_SHA" --title "Release $TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" artifacts/* --target "$GITHUB_SHA" --title "Release $TAG" --generate-notes
+          fi
