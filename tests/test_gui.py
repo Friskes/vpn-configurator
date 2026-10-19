@@ -358,6 +358,21 @@ def test_listed_mode_routes_source_dns(app, tmp_path, ips_file):
     assert "AllowedIPs = 8.8.8.8, 1.1.1.0/24, 100.64.0.1, 8.8.4.4" in app.preview_box.get("1.0", "end")
 
 
+def test_listed_mode_routes_commented_source_dns(app, tmp_path, ips_file):
+    """DNS с комментарием в конце строки — тоже DNS: он должен попасть в AllowedIPs."""
+    conf = tmp_path / "src.conf"
+    conf.write_text(
+        "[Interface]\nPrivateKey = abc\nDNS = 100.64.0.1  # Amnezia Premium\n\n"
+        "[Peer]\nPublicKey = def\nAllowedIPs = 0.0.0.0/0, ::/0\n",
+        encoding="utf-8",
+    )
+    app.wg_src.set(str(conf))
+    app.wg_files.add_paths([str(ips_file)])
+    app._refresh_preview()
+    app.update()
+    assert "AllowedIPs = 8.8.8.8, 1.1.1.0/24, 100.64.0.1" in app.preview_box.get("1.0", "end")
+
+
 def test_cut_ips_mode_carves_allowed_ips(app, tmp_path, wg_conf):
     """Режим вырезания (включён по умолчанию): ручной список исключений уходит из AllowedIPs,
     ключ DisallowedIPs не пишется."""

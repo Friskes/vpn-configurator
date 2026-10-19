@@ -230,9 +230,13 @@ def _section_key_indices(lines: Sequence[str], section: str, key: str) -> list[i
 
 
 def _get_values(lines: Sequence[str], section: str, key: str) -> list[str]:
+    """Значения ключа без комментария в конце строки: он тянется до конца строки и к значению
+    не относится, как и в списках адресов. Иначе "DNS = 100.64.0.1  # комментарий" дал бы
+    нечитаемый адрес, а "AllowedIPs = 10.0.0.0/8  # комментарий" — невырезаемый диапазон."""
     values: list[str] = []
     for index in _section_key_indices(lines, section, key):
         raw = KEY_LINE_RE.match(lines[index]).group("value")
+        raw = INLINE_COMMENT_RE.sub("", raw).strip()
         values.extend(item.strip() for item in raw.split(",") if item.strip())
     return values
 

@@ -1,3 +1,4 @@
+import ipaddress
 import json
 
 import pytest
@@ -556,6 +557,89 @@ class TestReadDnsIps:
 
     def test_missing_file(self, tmp_path):
         assert core.read_dns_ips(tmp_path / "nope.conf") == []
+
+
+class TestInlineCommentsInValues:
+    """Комментарий в конце значения ключа — часть комментария, а не часть значения:
+    иначе DNS молча теряется, а адрес не вырезается из AllowedIPs."""
+
+    def _conf(self, tmp_path, body):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            f"[Interface]\nPrivateKey = abc\n{body}\n\n[Peer]\nPublicKey = def\n",
+            encoding="utf-8",
+        )
+        return conf
+
+    def test_dns_with_inline_comment(self, tmp_path):
+        conf = self._conf(tmp_path, "DNS = 100.64.0.1  # Amnezia Premium")
+        assert core.read_dns_ips(conf) == ["100.64.0.1"]
+
+    def test_endpoint_with_inline_comment(self, tmp_path):
+        conf = self._conf(tmp_path, "")
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "Endpoint = 185.22.174.53  # main server\n",
+            encoding="utf-8",
+        )
+        assert core.read_endpoint_ip(conf) == "185.22.174.53"
+
+    def test_endpoint_with_port_and_inline_comment(self, tmp_path):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "Endpoint = 185.22.174.53:51820  # main server\n",
+            encoding="utf-8",
+        )
+        assert core.read_endpoint_ip(conf) == "185.22.174.53"
+
+    def test_allowed_ips_with_inline_comment(self, tmp_path):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "AllowedIPs = 10.100.0.0/22, 192.168.0.0/16  # office\n",
+            encoding="utf-8",
+        )
+        assert core.read_allowed_ips(conf) == ["10.100.0.0/22", "192.168.0.0/16"]
+
+    def test_slash_comment_stripped_too(self, tmp_path):
+        conf = self._conf(tmp_path, "DNS = 100.64.0.1  // Amnezia Premium")
+        assert core.read_dns_ips(conf) == ["100.64.0.1"]
+
+    def test_comment_ends_the_value(self, tmp_path):
+        """Комментарий тянется до конца строки: всё после него — комментарий, а не адреса."""
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "AllowedIPs = 10.100.0.0/22, 192.168.0.0/16  # office, 172.16.0.0/12\n",
+            encoding="utf-8",
+        )
+        assert core.read_allowed_ips(conf) == ["10.100.0.0/22", "192.168.0.0/16"]
+
+    def test_commented_range_is_carved_out(self, tmp_path):
+        """Диапазон с комментарием обязан вырезаться из AllowedIPs, а не проходить насквозь."""
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "AllowedIPs = 10.100.0.0/22  # office\n",
+            encoding="utf-8",
+        )
+        holes = core.read_allowed_ips(conf)
+        result = core.exclude_ips(["10.0.0.0/8"], holes)
+        assert "10.100.0.0/22" not in result
+        covered = sum(ipaddress.IPv4Network(value).num_addresses for value in result)
+        assert covered == 2**24 - 2**10
+
+    def test_generated_allowed_ips_holds_only_addresses(self, tmp_path):
+        conf = tmp_path / "src.conf"
+        conf.write_text(
+            "[Interface]\nPrivateKey = abc\n\n[Peer]\nPublicKey = def\n"
+            "AllowedIPs = 10.100.0.0/22  # office\n",
+            encoding="utf-8",
+        )
+        text = build(core.read_allowed_ips(conf), conf)
+        assert "AllowedIPs = 10.100.0.0/22" in text
+        assert "#" not in text.split("[Peer]")[1]
 
 
 class TestExcludeIps:
